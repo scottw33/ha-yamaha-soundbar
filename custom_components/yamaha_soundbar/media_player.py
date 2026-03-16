@@ -6,7 +6,6 @@ https://github.com/osk2/yamaha-soundbar
 """
 
 import asyncio
-from asyncio import CancelledError
 import async_timeout
 import voluptuous as vol
 import os
@@ -17,6 +16,8 @@ import socket
 from json import loads, dumps
 import binascii
 import urllib.request
+import urllib.error
+import requests
 import string
 import ssl
 import aiohttp
@@ -125,9 +126,9 @@ FW_SLOW_STREAMS = '4.6'
 ROOTDIR_USB = '/media/sda1/'
 UUID_ARYLIC = 'FF31F09E'
 TCPPORT = 8899
-UPNP_TIMEOUT = 2
-API_TIMEOUT = 2
-SCAN_INTERVAL = timedelta(seconds=3)
+UPNP_TIMEOUT = 5
+API_TIMEOUT = 5
+SCAN_INTERVAL = timedelta(seconds=10)
 ICE_THROTTLE = timedelta(seconds=45)
 LFM_THROTTLE = timedelta(seconds=4)
 UNA_THROTTLE = timedelta(seconds=20)
@@ -135,7 +136,8 @@ MROOM_UJWDIR = timedelta(seconds=20)
 MROOM_UJWROU = timedelta(seconds=3)
 SPOTIFY_PAUSED_TIMEOUT = timedelta(seconds=300)
 AUTOIDLE_STATE_TIMEOUT = timedelta(seconds=2)
-#PARALLEL_UPDATES = 0
+UPNP_RETRY_INTERVAL = timedelta(seconds=60)
+PARALLEL_UPDATES = 1
 
 CUT_EXTENSIONS = ['mp3', 'mp2', 'm2a', 'mpg', 'wav', 'aac', 'flac', 'flc', 'm4a', 'ape', 'wma', 'ac3', 'ogg']
 
