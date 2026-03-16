@@ -71,7 +71,6 @@ from homeassistant.const import (
     STATE_PAUSED,
     STATE_PLAYING,
     STATE_UNKNOWN,
-    STATE_UNAVAILABLE,
 )
 
 from . import DOMAIN, ATTR_MASTER
@@ -498,7 +497,7 @@ class YamahaDevice(MediaPlayerEntity):
         resp = await self.async_call_yamaha_httpapi("getPlayerStatus", True)
         if resp is False:
             _LOGGER.debug('Unable to connect to device: %s, %s', self.entity_id, self._name)
-            self._state = STATE_UNAVAILABLE
+            self._attr_available = False
             self._unav_throttle = True
             self._playhead_position = None
             self._duration = None
@@ -573,12 +572,13 @@ class YamahaDevice(MediaPlayerEntity):
 
         if isinstance(self._player_statdata, dict):
             self._unav_throttle = False
-            if self._first_update or (self._state == STATE_UNAVAILABLE or self._multiroom_wifidirect):
+            if self._first_update or (not self.available or self._multiroom_wifidirect):
                 #_LOGGER.debug("03 Update first time getStatus %s, %s", self.entity_id, self._name)
                 device_status = await self.async_call_yamaha_httpapi("getStatusEx", True)
                 if device_status is not None:
                     if isinstance(device_status, dict):
-                        if self._state == STATE_UNAVAILABLE:
+                        if not self.available:
+                            self._attr_available = True
                             self._state = STATE_IDLE
                         self._wifi_channel = device_status['WifiChannel']
                         self._ssid = binascii.hexlify(device_status['ssid'].encode('utf-8'))
@@ -890,7 +890,7 @@ class YamahaDevice(MediaPlayerEntity):
         if self._playing_tts or self._announce:
             return ICON_TTS
 
-        if self._state in [STATE_PAUSED, STATE_UNAVAILABLE, STATE_IDLE, STATE_UNKNOWN]:
+        if self._state in [STATE_PAUSED, STATE_IDLE, STATE_UNKNOWN]:
             return ICON_DEFAULT
 
         if self._muted:
@@ -1034,7 +1034,7 @@ class YamahaDevice(MediaPlayerEntity):
     @property
     def media_position(self):
         """Time in seconds of current playback head position."""
-        if (self._playing_localfile or self._playing_spotify or self._slave_mode or self._playing_mediabrowser or self._playing_mass) and self._state != STATE_UNAVAILABLE:
+        if (self._playing_localfile or self._playing_spotify or self._slave_mode or self._playing_mediabrowser or self._playing_mass) and self.available:
             return self._playhead_position
         else:
             return None
@@ -1042,7 +1042,7 @@ class YamahaDevice(MediaPlayerEntity):
     @property
     def media_duration(self):
         """Time in seconds of current song duration."""
-        if (self._playing_localfile or self._playing_spotify or self._slave_mode or self._playing_mediabrowser or self._playing_mass) and self._state != STATE_UNAVAILABLE:
+        if (self._playing_localfile or self._playing_spotify or self._slave_mode or self._playing_mediabrowser or self._playing_mass) and self.available:
             return self._duration
         else:
             return None
@@ -1183,7 +1183,7 @@ class YamahaDevice(MediaPlayerEntity):
 
             attributes[ATTR_DEBUG] = atrdbg
 
-        if self._state != STATE_UNAVAILABLE:
+        if self.available:
             attributes[ATTR_FWVER] = self._fw_ver + "." + self._mcu_ver
 
         return attributes
@@ -2252,7 +2252,7 @@ class YamahaDevice(MediaPlayerEntity):
     async def async_join(self, slaves):
         """Add selected slaves to multiroom configuration (original implementation)."""
         _LOGGER.debug("Multiroom JOIN request: Master: %s, Slaves: %s", self.entity_id, slaves)
-        if self._state == STATE_UNAVAILABLE:
+        if not self.available:
             return
 
         if self.entity_id not in self._multiroom_group:
@@ -2313,7 +2313,7 @@ class YamahaDevice(MediaPlayerEntity):
 
     async def async_unjoin_all(self):
         """Disconnect everybody from the multiroom configuration because i'm the master."""
-        if self._state == STATE_UNAVAILABLE:
+        if not self.available:
             return
 
         cmd = "multiroom:Ungroup"
@@ -2455,7 +2455,7 @@ class YamahaDevice(MediaPlayerEntity):
 
     async def async_snapshot(self, switchinput):
         """Snapshot the current input source and the volume level of it """
-        if self._state == STATE_UNAVAILABLE:
+        if not self.available:
             return
 
         if not self._slave_mode:
@@ -2530,7 +2530,7 @@ class YamahaDevice(MediaPlayerEntity):
 
     async def async_restore(self):
         """Restore the current input source and the volume level of it """
-        if self._state == STATE_UNAVAILABLE:
+        if not self.available:
             return
 
         if not self._slave_mode:
