@@ -461,34 +461,36 @@ class YamahaDevice(MediaPlayerEntity):
 
     async def async_call_yamaha_tcpuart(self, cmd):
         """Get the latest data from TCP UART service."""
-        LENC = format(len(cmd), '02x')
-        HED1 = '18 96 18 20 '
-        HED2 = ' 00 00 00 c1 02 00 00 00 00 00 00 00 00 00 00 '
-        CMHX = ' '.join(hex(ord(c))[2:] for c in cmd)
-        data = None
         _LOGGER.debug("For: %s Sending to %s TCP UART command: %s", self._name, self._host, cmd)
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(API_TIMEOUT)
-                s.connect((self._host, TCPPORT))
-                s.send(bytes.fromhex(HED1 + LENC + HED2 + CMHX))
-                data = str(repr(s.recv(1024))).encode().decode("unicode-escape")
-
-            pos = data.find("AXX")
-            if pos == -1:
-                pos = data.find("MCU")
-
-            data = data[pos:(len(data)-2)]
-            _LOGGER.debug("For: %s Received from %s TCP UART command result: %s", self._name, self._host, data)
-            try:
-                s.close()
-            except OSError:
-                pass
-
+            data = await self.hass.async_add_executor_job(
+                self._call_yamaha_tcpuart_sync, cmd
+            )
         except socket.error as ex:
             _LOGGER.debug("For: %s Error sending TCP UART command: %s with %s", self._name, cmd, ex)
             data = None
 
+        return data
+
+    def _call_yamaha_tcpuart_sync(self, cmd):
+        """Synchronous TCP UART communication (runs in executor)."""
+        LENC = format(len(cmd), '02x')
+        HED1 = '18 96 18 20 '
+        HED2 = ' 00 00 00 c1 02 00 00 00 00 00 00 00 00 00 00 '
+        CMHX = ' '.join(hex(ord(c))[2:] for c in cmd)
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(API_TIMEOUT)
+            s.connect((self._host, TCPPORT))
+            s.send(bytes.fromhex(HED1 + LENC + HED2 + CMHX))
+            data = str(repr(s.recv(1024))).encode().decode("unicode-escape")
+
+        pos = data.find("AXX")
+        if pos == -1:
+            pos = data.find("MCU")
+
+        data = data[pos:(len(data)-2)]
+        _LOGGER.debug("For: %s Received from %s TCP UART command result: %s", self._name, self._host, data)
         return data
 
     @Throttle(UNA_THROTTLE)
@@ -1994,25 +1996,34 @@ class YamahaDevice(MediaPlayerEntity):
         #_LOGGER.debug('For: %s stated media_artist: %s', self._name, self._media_artist)
 
     async def async_detect_stream_url_redirection(self, uri):
-        if uri.find('tts_proxy') != -1 or self._announce: # skip redirect check for local TTS streams
+        """Detect URL redirections."""
+        if uri.find('tts_proxy') != -1 or self._announce:
             return uri
         _LOGGER.debug('For: %s detect URI redirect-from:   %s', self._name, uri)
-        redirect_detect = True
-        check_uri = uri
         try:
-            while redirect_detect:
-                response_location = requests.head(check_uri, allow_redirects=False, headers={'User-Agent': 'VLC/3.0.16 LibVLC/3.0.16'})
-                #_LOGGER.debug('For: %s detecting URI redirect code: %s', self._name, str(response_location.status_code))
-                if response_location.status_code in [301, 302, 303, 307, 308] and 'Location' in response_location.headers:
-                    #_LOGGER.debug('For: %s detecting URI redirect location: %s', self._name, response_location.headers['Location'])
-                    check_uri = response_location.headers['Location']
-                else:
-                    #_LOGGER.debug('For: %s detecting URI redirect - result: %s', self._name, check_uri)
-                    redirect_detect = False
+            check_uri = await self.hass.async_add_executor_job(
+                self._detect_redirect_sync, uri
+            )
         except (requests.RequestException, OSError, ValueError):
-            pass
+            check_uri = uri
 
         _LOGGER.debug('For: %s detect URI redirect - to:   %s', self._name, check_uri)
+        return check_uri
+
+    def _detect_redirect_sync(self, uri):
+        """Synchronous redirect detection (runs in executor)."""
+        redirect_detect = True
+        check_uri = uri
+        while redirect_detect:
+            response_location = requests.head(
+                check_uri,
+                allow_redirects=False,
+                headers={'User-Agent': 'VLC/3.0.16 LibVLC/3.0.16'}
+            )
+            if response_location.status_code in [301, 302, 303, 307, 308] and 'Location' in response_location.headers:
+                check_uri = response_location.headers['Location']
+            else:
+                redirect_detect = False
         return check_uri
 
     async def async_parse_m3u_url(self, playlist):
