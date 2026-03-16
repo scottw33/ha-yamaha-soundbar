@@ -219,20 +219,25 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     lastfm_api_key = config.get(CONF_LASTFM_API_KEY)
     uuid = config.get(CONF_UUID)
 
+    available = True
     state = STATE_IDLE
-    loop = asyncio.get_event_loop()
-    initurl = "https://{0}/httpapi.asp?command=getStatusEx".format(host)
+
+    # Create SSL context once — reused for all HTTP calls
+    loop = asyncio.get_running_loop()
     dirname = os.path.dirname(__file__)
     certpath = os.path.join(dirname, CONF_CERT_FILENAME)
     ssl_ctx = await loop.run_in_executor(None, ssl.create_default_context, ssl.Purpose.SERVER_AUTH)
     await loop.run_in_executor(None, ssl_ctx.load_cert_chain, certpath)
     ssl_ctx.check_hostname = False
     ssl_ctx.verify_mode = ssl.CERT_NONE
-    conn = aiohttp.TCPConnector(ssl_context=ssl_ctx)
 
+    initurl = "https://{0}/httpapi.asp?command=getStatusEx".format(host)
+    websession = None
     try:
+        conn = aiohttp.TCPConnector(ssl_context=ssl_ctx)
         websession = aiohttp.ClientSession(connector=conn)
-        response = await websession.get(initurl)
+        async with async_timeout.timeout(10):
+            response = await websession.get(initurl)
 
         if response.status == HTTPStatus.OK:
             data = await response.json(content_type=None)
@@ -243,7 +248,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
             except KeyError:
                 pass
 
-            if name == None:
+            if name is None:
                 try:
                     name = data['DeviceName']
                 except KeyError:
@@ -255,16 +260,17 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 response.status,
                 response,
             )
-            state = STATE_UNAVAILABLE
+            available = False
 
     except (asyncio.TimeoutError, aiohttp.ClientError) as error:
         _LOGGER.warning(
             "Failed communicating with YamahaDevice (start) '%s': uuid: %s %s", host, uuid, type(error)
         )
-        state = STATE_UNAVAILABLE
+        available = False
 
     finally:
-        await websession.close()
+        if websession is not None:
+            await websession.close()
 
     yamaha = YamahaDevice(name,
                             host,
@@ -278,6 +284,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                             lastfm_api_key,
                             uuid,
                             state,
+                            available,
+                            ssl_ctx,
                             hass)
 
     async_add_entities([yamaha])
@@ -298,14 +306,20 @@ class YamahaDevice(MediaPlayerEntity):
                  lastfm_api_key,
                  uuid,
                  state,
+                 available,
+                 ssl_ctx,
                  hass):
         """Initialize the media player."""
+        self._ssl_ctx = ssl_ctx
+        self._session = None
+        self._attr_available = available
         self._uuid = uuid
         self._fw_ver = '1.0.0'
         self._mcu_ver = ''
         requester = AiohttpRequester(UPNP_TIMEOUT)
         self._factory = UpnpFactory(requester)
         self._upnp_device = None
+        self._upnp_last_attempt = None
         self._service = None
         self._features = None
         self._preset_key = 4
@@ -397,8 +411,10 @@ class YamahaDevice(MediaPlayerEntity):
         hass.bus.async_listen("mass_event", self.handle_event)
 
     async def async_added_to_hass(self):
-        """Record entity."""
+        """Record entity and create shared HTTP session."""
         self.hass.data[DOMAIN].entities.append(self)
+        conn = aiohttp.TCPConnector(ssl_context=self._ssl_ctx)
+        self._session = async_create_clientsession(self.hass, connector=conn)
 
     def handle_event(self, event):
         """Retrieve events from Music Assistant through the event bus."""
@@ -416,26 +432,14 @@ class YamahaDevice(MediaPlayerEntity):
             timeout = API_TIMEOUT
 
         try:
-            loop = asyncio.get_event_loop()
-            dirname = os.path.dirname(__file__)
-            certpath = os.path.join(dirname, CONF_CERT_FILENAME)
-            ssl_ctx = await loop.run_in_executor(None, ssl.create_default_context, ssl.Purpose.SERVER_AUTH)
-            await loop.run_in_executor(None, ssl_ctx.load_cert_chain, certpath)
-            ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode = ssl.CERT_NONE
-            conn = aiohttp.TCPConnector(ssl_context=ssl_ctx)
-            websession = aiohttp.ClientSession(connector=conn)
             async with async_timeout.timeout(timeout):
-                response = await websession.get(url)
+                response = await self._session.get(url)
 
         except (asyncio.TimeoutError, aiohttp.ClientError) as error:
             _LOGGER.warning(
                 "Failed async communicating with YamahaDevice (httpapi) '%s': %s", self._name, type(error)
             )
             return False
-
-        finally:
-            await websession.close()
 
         if response.status == HTTPStatus.OK:
             if jsn:
@@ -452,6 +456,7 @@ class YamahaDevice(MediaPlayerEntity):
                 response,
             )
             return False
+
         return data
 
     async def async_call_yamaha_tcpuart(self, cmd):
