@@ -477,7 +477,7 @@ class YamahaDevice(MediaPlayerEntity):
             _LOGGER.debug("For: %s Received from %s TCP UART command result: %s", self._name, self._host, data)
             try:
                 s.close()
-            except:
+            except OSError:
                 pass
 
         except socket.error as ex:
@@ -615,9 +615,9 @@ class YamahaDevice(MediaPlayerEntity):
                             url = "http://{0}:49152/description.xml".format(self._host)
                             try:
                                 self._upnp_device = await self._factory.async_create_device(url)
-                            except:
+                            except Exception as err:
                                 _LOGGER.warning(
-                                    "Failed communicating with Yamaha (UPnP) '%s': %s", self._name, type(error)
+                                    "Failed communicating with Yamaha (UPnP) '%s': %s", self._name, err
                                 )
 
                         if self._first_update:
@@ -1888,7 +1888,7 @@ class YamahaDevice(MediaPlayerEntity):
         try:
             request = urllib.request.Request(self._media_uri_final, headers={'Icy-MetaData': '1','User-Agent': 'VLC/3.0.16 LibVLC/3.0.16'})  # request metadata
             response = await self.hass.async_add_executor_job(urllib.request.urlopen, request)
-        except:  # (urllib.error.HTTPError)
+        except (urllib.error.URLError, OSError) as err:
             _LOGGER.debug('For: %s Metadata error: %s', self._name, self._media_uri_final)
             self._media_title = None
             self._media_artist = None
@@ -2004,7 +2004,7 @@ class YamahaDevice(MediaPlayerEntity):
                 else:
                     #_LOGGER.debug('For: %s detecting URI redirect - result: %s', self._name, check_uri)
                     redirect_detect = False
-        except:
+        except (requests.RequestException, OSError, ValueError):
             pass
 
         _LOGGER.debug('For: %s detect URI redirect - to:   %s', self._name, check_uri)
@@ -2677,8 +2677,8 @@ class YamahaDevice(MediaPlayerEntity):
             self._media_uri_final = media_info.get('TrackSource')
             media_metadata = media_info.get('CurrentURIMetaData')
             #_LOGGER.debug("GetMediaInfo for: %s, UPNP media_metadata:%s", self.entity_id, media_info)
-        except:
-            _LOGGER.warning("GetMediaInfo/CurrentURIMetaData UPNP error: %s", self.entity_id)
+        except Exception as err:
+            _LOGGER.warning("GetMediaInfo/CurrentURIMetaData UPNP error: %s: %s", self.entity_id, err)
 
         if media_metadata is None:
             return
@@ -2737,8 +2737,8 @@ class YamahaDevice(MediaPlayerEntity):
             media_info = await self._service.action("BrowseQueue").async_call(QueueName=queuename)
             media_metadata = media_info.get('QueueContext')
             #_LOGGER.debug("PlayQueue for: %s, UPNP media_metadata:%s", self.entity_id, media_info)
-        except:
-            _LOGGER.debug("PlayQueue/QueueContext UPNP error, media not present?: %s", self.entity_id)
+        except Exception as err:
+            _LOGGER.debug("PlayQueue/QueueContext UPNP error, media not present?: %s: %s", self.entity_id, err)
 
         if media_metadata is None:
             return
@@ -2767,12 +2767,13 @@ class YamahaDevice(MediaPlayerEntity):
         self._service = self._upnp_device.service('urn:schemas-wiimu-com:service:PlayQueue:1')
         #_LOGGER.debug("PlayQueue for: %s, UPNP service:%s", self.entity_id, self._service)
 
+        result = None
         try:
             media_info = await self._service.action("SetSpotifyPreset").async_call(KeyIndex=int(presetnum))
             _LOGGER.debug("PlayQueue/SetSpotifyPreset for: %s, UPNP media_info:%s", self.entity_id, media_info)
             result = str(media_info.get('Result'))
-        except:
-            _LOGGER.debug("SetSpotifyPreset UPNP error for: %s, presetnum: %s, result: %s", self.entity_id, presetnum, result)
+        except Exception as err:
+            _LOGGER.debug("SetSpotifyPreset UPNP error for: %s, presetnum: %s, result: %s, err: %s", self.entity_id, presetnum, result, err)
             return
 
         preset_map = dict()
@@ -2780,8 +2781,8 @@ class YamahaDevice(MediaPlayerEntity):
         try:
             preset_map = await self._service.action("GetKeyMapping").async_call()
             preset_map = preset_map.get('QueueContext')
-        except:
-            _LOGGER.debug("GetKeyMapping UPNP error: %s", self.entity_id)
+        except Exception as err:
+            _LOGGER.debug("GetKeyMapping UPNP error: %s: %s", self.entity_id, err)
             return
 
         xml_tree = ET.fromstring(preset_map)
@@ -2796,21 +2797,21 @@ class YamahaDevice(MediaPlayerEntity):
 
         try:
             xml_tree.find('Key'+presetnum+'/Name').text = "Snapshot set by Home Assistant ("+result+")_#~" + tme
-        except:
+        except (AttributeError, ET.ParseError):
             data=xml_tree.find('Key'+presetnum)
             snap=ET.SubElement(data,'Name')
             snap.text = "Snapshot set by Home Assistant ("+result+")_#~" + tme
 
         try:
             xml_tree.find('Key'+presetnum+'/Source').text = "SPOTIFY"
-        except:
+        except (AttributeError, ET.ParseError):
             data=xml_tree.find('Key'+presetnum)
             snap=ET.SubElement(data,'Source')
             snap.text = "SPOTIFY"
 
         try:
             xml_tree.find('Key'+presetnum+'/PicUrl').text = "https://brands.home-assistant.io/_/media_player/icon.png"
-        except:
+        except (AttributeError, ET.ParseError):
             data=xml_tree.find('Key'+presetnum)
             snap=ET.SubElement(data,'PicUrl')
             snap.text = "https://brands.home-assistant.io/_/media_player/icon.png"
@@ -2819,8 +2820,8 @@ class YamahaDevice(MediaPlayerEntity):
 
         try:
             await self._service.action("SetKeyMapping").async_call(QueueContext=preset_map)
-        except:
-            _LOGGER.debug("SetKeyMapping UPNP error: %s, %s", self.entity_id, preset_map)
+        except Exception as err:
+            _LOGGER.debug("SetKeyMapping UPNP error: %s, %s, err: %s", self.entity_id, preset_map, err)
             return
 
 
