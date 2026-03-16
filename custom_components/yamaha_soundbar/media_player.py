@@ -515,6 +515,7 @@ class YamahaDevice(MediaPlayerEntity):
             self._icecast_name = None
             self._source = None
             self._upnp_device = None
+            self._upnp_last_attempt = None
             self._first_update = True
             self._slave_mode = False
             self._is_master = False
@@ -618,14 +619,21 @@ class YamahaDevice(MediaPlayerEntity):
                             if self._fwvercheck(self._fw_ver) < self._fwvercheck(FW_MROOM_RTR_MIN):
                                 self._multiroom_wifidirect = True
 
-                        if self._upnp_device is None: # and self._name is not None:
-                            url = "http://{0}:49152/description.xml".format(self._host)
-                            try:
-                                self._upnp_device = await self._factory.async_create_device(url)
-                            except Exception as err:
-                                _LOGGER.warning(
-                                    "Failed communicating with Yamaha (UPnP) '%s': %s", self._name, err
-                                )
+                        if self._upnp_device is None:
+                            should_retry = (
+                                self._upnp_last_attempt is None
+                                or utcnow() >= (self._upnp_last_attempt + UPNP_RETRY_INTERVAL)
+                            )
+                            if should_retry:
+                                url = "http://{0}:49152/description.xml".format(self._host)
+                                try:
+                                    self._upnp_device = await self._factory.async_create_device(url)
+                                    self._upnp_last_attempt = None
+                                except Exception as err:
+                                    self._upnp_last_attempt = utcnow()
+                                    _LOGGER.warning(
+                                        "Failed communicating with Yamaha (UPnP) '%s': %s", self._name, err
+                                    )
 
                         if self._first_update:
                             self._duration = 0
