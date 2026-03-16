@@ -802,7 +802,7 @@ class YamahaDevice(MediaPlayerEntity):
 
             elif self._playing_webplaylist:
                 if self._state != STATE_IDLE:
-                    self.async_update_via_upnp()
+                    await self.async_update_via_upnp()
 
             else:
                 #_LOGGER.debug("09 it's playing something else: %s, %s", self.entity_id, self._name)
@@ -1961,12 +1961,12 @@ class YamahaDevice(MediaPlayerEntity):
                             self._media_title = None
 
                         if self._media_artist is not None:
-                            self._media_artist.replace('/', ' / ')
-                            self._media_artist.replace('  ', ' ')
+                            self._media_artist = self._media_artist.replace('/', ' / ')
+                            self._media_artist = self._media_artist.replace('  ', ' ')
 
                         if self._media_title is not None:
-                            self._media_title.replace('/', ' / ')
-                            self._media_title.replace('  ', ' ')
+                            self._media_title = self._media_title.replace('/', ' / ')
+                            self._media_title = self._media_title.replace('  ', ' ')
 
                         break
                 else:
