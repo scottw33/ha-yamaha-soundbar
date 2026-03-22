@@ -179,8 +179,8 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
         # Linkplay loop modes: 0=repeat all, 1=repeat one, 2=shuffle+repeat all,
         # 3=shuffle, 4=repeat one+shuffle, 5=repeat one no shuffle
         loop = str(player_status.get("loop", "0"))
-        shuffle = loop in ("2", "3", "5")
-        repeat_map = {"0": RepeatMode.ALL, "1": RepeatMode.ONE, "2": RepeatMode.ALL, "5": RepeatMode.ONE}
+        shuffle = loop in ("2", "3", "4")
+        repeat_map = {"0": RepeatMode.ALL, "1": RepeatMode.ONE, "2": RepeatMode.ALL, "4": RepeatMode.ONE}
         repeat = repeat_map.get(loop, RepeatMode.OFF)
 
         # Source detection

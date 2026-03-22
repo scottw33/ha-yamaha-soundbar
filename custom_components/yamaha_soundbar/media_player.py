@@ -228,7 +228,9 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
         """When entity is added to hass."""
         await super().async_added_to_hass()
         # Listen for Music Assistant bus events
-        self.hass.bus.async_listen("mass_event", self.handle_event)
+        self.async_on_remove(
+            self.hass.bus.async_listen("mass_event", self.handle_event)
+        )
 
     # ------------------------------------------------------------------
     # Coordinator callback — runs after every coordinator poll
@@ -842,6 +844,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                     "mass", "queue_command",
                     service_data={"entity_id": self.entity_id, "command": "next"},
                 )
+            await self.coordinator.async_request_refresh()
         else:
             await self._master.async_media_next_track()
 
@@ -859,6 +862,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                     "mass", "queue_command",
                     service_data={"entity_id": self.entity_id, "command": "previous"},
                 )
+            await self.coordinator.async_request_refresh()
         else:
             await self._master.async_media_previous_track()
 
@@ -891,6 +895,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                 for slave in self._slave_list:
                     await slave.async_set_state(self._state)
                     await slave.async_set_position_updated_at(self.media_position_updated_at)
+            await self.coordinator.async_request_refresh()
         else:
             await self._master.async_media_play()
 
@@ -911,6 +916,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                 for slave in self._slave_list:
                     await slave.async_set_state(self._state)
                     await slave.async_set_position_updated_at(self.media_position_updated_at)
+            await self.coordinator.async_request_refresh()
         else:
             await self._master.async_media_pause()
 
@@ -957,6 +963,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                 for slave in self._slave_list:
                     await slave.async_set_state(self._state)
                     await slave.async_set_position_updated_at(self.media_position_updated_at)
+            await self.coordinator.async_request_refresh()
         else:
             await self._master.async_media_stop()
 
@@ -967,6 +974,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                 await self.coordinator.client.async_seek(int(position))
                 self._position_updated_at = utcnow()
                 self._idletime_updated_at = self._position_updated_at
+            await self.coordinator.async_request_refresh()
         else:
             await self._master.async_media_seek(position)
 
@@ -974,6 +982,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
         """Set volume level, input range 0..1."""
         vol = round(int(volume * MAX_VOL))
         await self.coordinator.client.async_set_volume(vol)
+        await self.coordinator.async_request_refresh()
 
     async def async_volume_up(self) -> None:
         """Increase volume one step."""
@@ -982,6 +991,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
             return
         volume = min(100, current_vol + int(self._volume_step))
         await self.coordinator.client.async_set_volume(volume)
+        await self.coordinator.async_request_refresh()
 
     async def async_volume_down(self) -> None:
         """Decrease volume one step."""
@@ -990,10 +1000,12 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
             return
         volume = max(0, current_vol - int(self._volume_step))
         await self.coordinator.client.async_set_volume(volume)
+        await self.coordinator.async_request_refresh()
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute (true) or unmute (false) media player."""
         await self.coordinator.client.async_mute(mute)
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:
         """Use unmute instead, because power is not supported."""
@@ -1068,6 +1080,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                         await slave.async_set_source(source)
 
             self.async_write_ha_state()
+            await self.coordinator.async_request_refresh()
         else:
             await self._master.async_select_source(source)
 
@@ -1079,6 +1092,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
             if self._slave_list is not None:
                 for slave in self._slave_list:
                     await slave.async_set_sound_mode(sound_mode)
+            await self.coordinator.async_request_refresh()
         else:
             await self._master.async_select_sound_mode(sound_mode)
 
@@ -1086,34 +1100,38 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
         """Change the shuffle mode."""
         if not self._slave_mode:
             if shuffle:
-                mode = "2"
+                repeat = self.coordinator.data.repeat
+                if repeat == RepeatMode.ONE:
+                    mode = "4"  # shuffle + repeat one
+                else:
+                    mode = "2"  # shuffle + repeat all (default)
             else:
                 repeat = self.coordinator.data.repeat
-                if repeat == RepeatMode.OFF:
-                    mode = "0"
-                elif repeat == RepeatMode.ALL:
-                    mode = "3"
+                if repeat == RepeatMode.ALL:
+                    mode = "0"  # repeat all, no shuffle
                 elif repeat == RepeatMode.ONE:
-                    mode = "1"
+                    mode = "1"  # repeat one, no shuffle
                 else:
-                    mode = "0"
+                    mode = "5"  # no repeat, no shuffle (sequence)
             await self.coordinator.client.async_set_loopmode(mode)
+            await self.coordinator.async_request_refresh()
         else:
             await self._master.async_set_shuffle(shuffle)
 
     async def async_set_repeat(self, repeat: str) -> None:
         """Change the repeat mode."""
         if not self._slave_mode:
-            current_shuffle = self.coordinator.data.shuffle
+            shuffle = self.coordinator.data.shuffle
             if repeat == RepeatMode.OFF:
-                mode = "0"
+                mode = "3" if shuffle else "5"  # shuffle-no-repeat or sequence
             elif repeat == RepeatMode.ALL:
-                mode = "2" if current_shuffle else "3"
+                mode = "2" if shuffle else "0"  # shuffle+repeat-all or repeat-all
             elif repeat == RepeatMode.ONE:
-                mode = "1"
+                mode = "4" if shuffle else "1"  # shuffle+repeat-one or repeat-one
             else:
                 mode = "0"
             await self.coordinator.client.async_set_loopmode(mode)
+            await self.coordinator.async_request_refresh()
         else:
             await self._master.async_set_repeat(repeat)
 
