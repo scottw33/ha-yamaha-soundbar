@@ -1,0 +1,52 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Yamaha Soundbar",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "IP address of the soundbar"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the soundbar at this address",
+      "unknown": "An unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This soundbar is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "volume_step": "Volume step",
+          "announce_volume_increase": "TTS volume boost",
+          "icecast_metadata": "Icecast metadata mode",
+          "led_off": "Turn off LED"
+        }
+      }
+    }
+  },
+  "entity": {
+    "select": {
+      "sound_program": { "name": "Sound program" },
+      "preset": { "name": "Preset" }
+    },
+    "number": {
+      "subwoofer_volume": { "name": "Subwoofer volume" }
+    },
+    "switch": {
+      "surround": { "name": "3D surround" },
+      "clear_voice": { "name": "Clear voice" },
+      "bass_extension": { "name": "Bass extension" },
+      "led": { "name": "LED" }
+    },
+    "sensor": {
+      "wifi_channel": { "name": "WiFi channel" }
+    }
+  }
+}
