@@ -1,192 +1,178 @@
-"""
-Support for Yamaha Linkplay A118 based devices
+"""Yamaha Soundbar integration."""
+from __future__ import annotations
 
-For more details about this platform, please refer to the documentation at
-https://github.com/osk2/yamaha_soundbar
-"""
 import logging
+import ssl
+from pathlib import Path
+
 import voluptuous as vol
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.typing import ConfigType
 
-DOMAIN = 'yamaha_soundbar'
-
-SERVICE_JOIN = 'join'
-SERVICE_UNJOIN = 'unjoin'
-SERVICE_PRESET = 'preset'
-SERVICE_CMD = 'command'
-SERVICE_SNAP = 'snapshot'
-SERVICE_REST = 'restore'
-SERVICE_LIST = 'get_tracks'
-SERVICE_PLAY = 'play_track'
-SERVICE_SOUND = 'sound_settings'
-
-ATTR_MASTER = 'master'
-ATTR_PRESET = 'preset'
-ATTR_CMD = 'command'
-ATTR_NOTIF = 'notify'
-ATTR_SNAP = 'switchinput'
-ATTR_SELECT = 'input_select'
-ATTR_SOURCE = 'source'
-ATTR_TRACK = 'track'
-ATTR_SOUND = 'sound_program'
-ATTR_SUB = 'subwoofer_volume'
-ATTR_SURROUND = 'surround'
-ATTR_VOICE = 'clear_voice'
-ATTR_BASS = 'bass_extension'
-ATTR_MUTE = 'mute'
-ATTR_POWER_SAVING = 'power_saving'
-
-
-SERVICE_SCHEMA = vol.Schema({
-    vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids
-})
-
-JOIN_SERVICE_SCHEMA = SERVICE_SCHEMA.extend({
-    vol.Required(ATTR_MASTER): cv.entity_id
-})
-
-PRESET_BUTTON_SCHEMA = vol.Schema({
-    vol.Required(ATTR_ENTITY_ID): cv.comp_entity_ids,
-    vol.Required(ATTR_PRESET): cv.positive_int
-})
-
-CMND_SERVICE_SCHEMA = vol.Schema({
-    vol.Required(ATTR_ENTITY_ID): cv.comp_entity_ids,
-    vol.Required(ATTR_CMD): cv.string,
-    vol.Optional(ATTR_NOTIF, default=True): cv.boolean
-})
-
-REST_SERVICE_SCHEMA = vol.Schema({
-    vol.Required(ATTR_ENTITY_ID): cv.comp_entity_ids
-})
-
-SNAP_SERVICE_SCHEMA = vol.Schema({
-    vol.Required(ATTR_ENTITY_ID): cv.comp_entity_ids,
-    vol.Optional(ATTR_SNAP, default=True): cv.boolean
-})
-
-PLYTRK_SERVICE_SCHEMA = vol.Schema({
-    vol.Required(ATTR_ENTITY_ID): cv.entity_id,
-    vol.Required(ATTR_TRACK): cv.template
-})
-
-SOUND_SERVICE_SCHEMA = vol.Schema({
-    vol.Required(ATTR_ENTITY_ID): cv.entity_id,
-    vol.Optional(ATTR_SOUND): cv.string,
-    vol.Optional(ATTR_SUB): int,
-    vol.Optional(ATTR_SURROUND): cv.boolean,
-    vol.Optional(ATTR_VOICE): cv.boolean,
-    vol.Optional(ATTR_BASS): cv.boolean,
-    vol.Optional(ATTR_MUTE): cv.boolean,
-    vol.Optional(ATTR_POWER_SAVING): cv.boolean
-})
+from .client import YamahaClient
+from .const import (
+    ATTR_MASTER,
+    ATTR_SNAP,
+    ATTR_TRACK,
+    CONF_ANNOUNCE_VOLUME_INCREASE,
+    CONF_CERT_FILENAME,
+    CONF_ICECAST_METADATA,
+    CONF_LEDOFF,
+    CONF_SOURCE_IGNORE,
+    CONF_SOURCES,
+    CONF_UUID,
+    CONF_VOLUME_STEP,
+    DEFAULT_ANNOUNCE_VOLUME_INCREASE,
+    DEFAULT_ICECAST_UPDATE,
+    DEFAULT_LEDOFF,
+    DEFAULT_VOLUME_STEP,
+    DOMAIN,
+    PLATFORMS,
+    SERVICE_JOIN,
+    SERVICE_PLAY,
+    SERVICE_REST,
+    SERVICE_SNAP,
+    SERVICE_UNJOIN,
+    SOURCES_DEFAULT,
+)
+from .coordinator import YamahaCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup(hass, config):
-    """Handle service configuration."""
+type YamahaSoundbarConfigEntry = ConfigEntry[YamahaCoordinator]
 
-    async def async_service_handle(service):
-        """Handle services."""
-        _LOGGER.debug("DOMAIN: %s, entities: %s", DOMAIN, str(hass.data[DOMAIN].entities))
-        _LOGGER.debug("Service_handle from id: %s", service.data.get(ATTR_ENTITY_ID))
-        entity_ids = service.data.get(ATTR_ENTITY_ID)
-        entities = hass.data[DOMAIN].entities
+# Service schemas
+SERVICE_SCHEMA = vol.Schema({vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids})
 
-        if entity_ids:
-            if entity_ids == 'all':
-                entity_ids = [e.entity_id for e in entities]
-            entities = [e for e in entities if e.entity_id in entity_ids]
+JOIN_SERVICE_SCHEMA = SERVICE_SCHEMA.extend({vol.Required(ATTR_MASTER): cv.entity_id})
 
-        if service.service == SERVICE_JOIN:
-            master = [e for e in hass.data[DOMAIN].entities
-                      if e.entity_id == service.data[ATTR_MASTER]]
-            if master:
-                client_entities = [e for e in entities
-                                   if e.entity_id != master[0].entity_id]
-                _LOGGER.debug("**JOIN** set clients %s for master %s",
-                              [e.entity_id for e in client_entities],
-                              master[0].entity_id)
-                await master[0].async_join(client_entities)
+SNAP_SERVICE_SCHEMA = vol.Schema({
+    vol.Required(ATTR_ENTITY_ID): cv.comp_entity_ids,
+    vol.Optional(ATTR_SNAP, default=True): cv.boolean,
+})
 
-        elif service.service == SERVICE_UNJOIN:
-            _LOGGER.debug("**UNJOIN** entities: %s", entities)
-            masters = [entities for entities in entities
-                       if entities.is_master]
-            if masters:
-                for master in masters:
-                    await master.async_unjoin_all()
-            else:
-                for entity in entities:
-                    await entity.async_unjoin_me()
+REST_SERVICE_SCHEMA = vol.Schema({vol.Required(ATTR_ENTITY_ID): cv.comp_entity_ids})
 
-        elif service.service == SERVICE_PRESET:
-            preset = service.data.get(ATTR_PRESET)
-            for device in entities:
-                if device.entity_id in entity_ids:
-                    _LOGGER.debug("**PRESET** entity: %s; preset: %s", device.entity_id, preset)
-                    await device.async_preset_button(preset)
-
-        elif service.service == SERVICE_CMD:
-            command = service.data.get(ATTR_CMD)
-            notify = service.data.get(ATTR_NOTIF)
-            for device in entities:
-                if device.entity_id in entity_ids:
-                    _LOGGER.debug("**COMMAND** entity: %s; command: %s", device.entity_id, command)
-                    await device.async_execute_command(command, notify)
-
-        elif service.service == SERVICE_SNAP:
-            switchinput = service.data.get(ATTR_SNAP)
-            for device in entities:
-                if device.entity_id in entity_ids:
-                    _LOGGER.debug("**SNAPSHOT** entity: %s;", device.entity_id)
-                    await device.async_snapshot(switchinput)
-
-        elif service.service == SERVICE_REST:
-            for device in entities:
-                if device.entity_id in entity_ids:
-                    _LOGGER.debug("**RESTORE** entity: %s;", device.entity_id)
-                    await device.async_restore()
-
-        elif service.service == SERVICE_PLAY:
-            track = service.data.get(ATTR_TRACK)
-            for device in entities:
-                if device.entity_id in entity_ids:
-                    _LOGGER.debug("**PLAY TRACK** entity: %s; track: %s", device.entity_id, track)
-                    await device.async_play_track(track)
-
-        elif service.service == SERVICE_SOUND:
-            settings = {key: service.data.get(key) for key in [ATTR_SOUND,
-                                                          ATTR_SUB,
-                                                          ATTR_SURROUND,
-                                                          ATTR_VOICE,
-                                                          ATTR_BASS,
-                                                          ATTR_POWER_SAVING,
-                                                          ATTR_MUTE]}
-            for device in entities:
-                if device.entity_id in entity_ids:
-                    _LOGGER.debug("**SET SOUND** entity: %s; settings: %s", device.entity_id,
-                                  settings)
-                    await device.async_set_sound(settings)
+PLYTRK_SERVICE_SCHEMA = vol.Schema({
+    vol.Required(ATTR_ENTITY_ID): cv.entity_id,
+    vol.Required(ATTR_TRACK): cv.template,
+})
 
 
-    hass.services.async_register(
-        DOMAIN, SERVICE_JOIN, async_service_handle, schema=JOIN_SERVICE_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_UNJOIN, async_service_handle, schema=SERVICE_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_PRESET, async_service_handle, schema=PRESET_BUTTON_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_CMD, async_service_handle, schema=CMND_SERVICE_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_SNAP, async_service_handle, schema=SNAP_SERVICE_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_REST, async_service_handle, schema=REST_SERVICE_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_PLAY, async_service_handle, schema=PLYTRK_SERVICE_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_SOUND, async_service_handle, schema=SOUND_SERVICE_SCHEMA)
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up the Yamaha Soundbar integration."""
+    hass.data.setdefault(DOMAIN, {"entities": []})
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: YamahaSoundbarConfigEntry) -> bool:
+    """Set up Yamaha Soundbar from a config entry."""
+    host = entry.data["host"]
+
+    # SSL context
+    certpath = Path(__file__).parent / CONF_CERT_FILENAME
+    ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    ssl_ctx.load_cert_chain(certpath)
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    # HTTP session
+    session = async_create_clientsession(hass, verify_ssl=False)
+
+    # Client
+    client = YamahaClient(host, session, ssl_ctx)
+
+    # Source config from options
+    source_mapping = entry.options.get(CONF_SOURCES, SOURCES_DEFAULT.copy())
+    source_ignore = entry.options.get(CONF_SOURCE_IGNORE, [])
+
+    # Coordinator
+    coordinator = YamahaCoordinator(
+        hass, client, entry,
+        source_mapping=source_mapping,
+        source_ignore=source_ignore,
+    )
+
+    # Set initial LED state from options
+    led_off = entry.options.get(CONF_LEDOFF, DEFAULT_LEDOFF)
+    coordinator.set_led_state(not led_off)
+
+    await coordinator.async_config_entry_first_refresh()
+
+    entry.runtime_data = coordinator
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Register services on first entry
+    if not hass.services.has_service(DOMAIN, SERVICE_JOIN):
+        _register_services(hass)
+
+    # Reload on options change
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: YamahaSoundbarConfigEntry) -> bool:
+    """Unload a config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update — reload the entry."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+def _register_services(hass: HomeAssistant) -> None:
+    """Register integration services."""
+
+    def _get_entities(entity_ids):
+        """Resolve entity IDs to entity objects."""
+        entities = hass.data[DOMAIN]["entities"]
+        if entity_ids and entity_ids != "all":
+            return [e for e in entities if e.entity_id in entity_ids]
+        return entities
+
+    async def async_join_service(call: ServiceCall) -> None:
+        entity_ids = call.data.get(ATTR_ENTITY_ID)
+        master_id = call.data[ATTR_MASTER]
+        all_entities = hass.data[DOMAIN]["entities"]
+        master = next((e for e in all_entities if e.entity_id == master_id), None)
+        if master:
+            slaves = [e for e in _get_entities(entity_ids) if e.entity_id != master_id]
+            await master.async_join(slaves)
+
+    async def async_unjoin_service(call: ServiceCall) -> None:
+        entities = _get_entities(call.data.get(ATTR_ENTITY_ID))
+        masters = [e for e in entities if e.is_master]
+        if masters:
+            for master in masters:
+                await master.async_unjoin_all()
+        else:
+            for entity in entities:
+                await entity.async_unjoin_me()
+
+    async def async_snapshot_service(call: ServiceCall) -> None:
+        switchinput = call.data.get(ATTR_SNAP)
+        for entity in _get_entities(call.data.get(ATTR_ENTITY_ID)):
+            await entity.async_snapshot(switchinput)
+
+    async def async_restore_service(call: ServiceCall) -> None:
+        for entity in _get_entities(call.data.get(ATTR_ENTITY_ID)):
+            await entity.async_restore()
+
+    async def async_play_track_service(call: ServiceCall) -> None:
+        track = call.data.get(ATTR_TRACK)
+        for entity in _get_entities(call.data.get(ATTR_ENTITY_ID)):
+            await entity.async_play_track(track)
+
+    hass.services.async_register(DOMAIN, SERVICE_JOIN, async_join_service, schema=JOIN_SERVICE_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_UNJOIN, async_unjoin_service, schema=SERVICE_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_SNAP, async_snapshot_service, schema=SNAP_SERVICE_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_REST, async_restore_service, schema=REST_SERVICE_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_PLAY, async_play_track_service, schema=PLYTRK_SERVICE_SCHEMA)
