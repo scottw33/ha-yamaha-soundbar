@@ -32,11 +32,18 @@ ICON_PUSHSTREAM = "mdi:cast-audio"
 ICON_TTS = "mdi:text-to-speech"
 
 # Timing
-MAX_VOL = 100
+MAX_VOL = 100  # Device raw volume max (0-100)
+VOLUME_DISPLAY_SCALE = 2  # Yamaha iOS app shows raw/2 (0-50); match it in HA
 TCPPORT = 8899
 UPNP_TIMEOUT = 5
-API_TIMEOUT = 5
+API_TIMEOUT = 8  # Per-request timeout; the control API can briefly stall while streaming
 SCAN_INTERVAL = timedelta(seconds=10)
+
+# Poll resilience: absorb a single transient request miss instead of flipping
+# the entity unavailable. A poll retries once after a short pause, and the
+# entity only goes unavailable after several consecutive failed polls.
+POLL_RETRY_DELAY = 1.5  # seconds to wait before retrying a failed request once
+MAX_CONSECUTIVE_ERRORS = 3  # failed polls tolerated before marking unavailable
 ICE_THROTTLE = timedelta(seconds=45)
 UNA_THROTTLE = timedelta(seconds=20)
 MROOM_UJWDIR = timedelta(seconds=20)

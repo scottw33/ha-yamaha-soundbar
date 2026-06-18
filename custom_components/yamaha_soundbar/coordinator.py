@@ -1,7 +1,9 @@
 """DataUpdateCoordinator for Yamaha Soundbar."""
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 
@@ -18,7 +20,10 @@ from homeassistant.util.dt import utcnow
 from .client import YamahaClient, YamahaCannotConnect
 from .const import (
     DOMAIN,
+    MAX_CONSECUTIVE_ERRORS,
     MAX_VOL,
+    POLL_RETRY_DELAY,
+    VOLUME_DISPLAY_SCALE,
     SCAN_INTERVAL,
     SOUND_MODES,
     SOURCES_DEFAULT,
@@ -88,6 +93,7 @@ class YamahaData:
     # Raw responses for media_player complex logic
     raw_player_status: dict = field(default_factory=dict)
     raw_device_status: dict = field(default_factory=dict)
+    raw_sound_settings: dict = field(default_factory=dict)
 
 
 class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
@@ -117,6 +123,7 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
         self._upnp_last_attempt: float | None = None
         self._first_update = True
         self._led_state: bool = True  # Assume on until told otherwise
+        self._consecutive_errors = 0  # Failed polls in a row (poll resilience)
 
         # UPnP factory
         requester = AiohttpRequester(UPNP_TIMEOUT)
@@ -131,22 +138,61 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
         """Update locally tracked LED state (no device read-back available)."""
         self._led_state = state
 
+    async def _async_request_once_retried(
+        self, request: Callable[[], Awaitable[dict]]
+    ) -> dict:
+        """Call a client request, retrying once after a short pause.
+
+        The control API occasionally drops or resets a single request while the
+        device is busy streaming. Retrying once absorbs that blip so a momentary
+        miss never reaches the caller as a failure.
+        """
+        try:
+            return await request()
+        except YamahaCannotConnect:
+            await asyncio.sleep(POLL_RETRY_DELAY)
+            return await request()
+
     async def _async_update_data(self) -> YamahaData:
         """Fetch data from the device."""
+        # getStatusEx is the one call we cannot do without; everything else can
+        # fall back to the last known value for a cycle. Retry once on a blip,
+        # and tolerate a few consecutive failed polls before going unavailable
+        # so a transient miss does not flicker the entity (or log an error).
         try:
-            device_status = await self.client.async_get_device_status()
+            device_status = await self._async_request_once_retried(
+                self.client.async_get_device_status
+            )
         except YamahaCannotConnect as err:
+            self._consecutive_errors += 1
+            if self._consecutive_errors < MAX_CONSECUTIVE_ERRORS and self.data is not None:
+                _LOGGER.debug(
+                    "Transient poll failure %d/%d for %s, keeping last known state: %s",
+                    self._consecutive_errors,
+                    MAX_CONSECUTIVE_ERRORS,
+                    self.client.host,
+                    err,
+                )
+                return self.data
             raise UpdateFailed(f"Cannot connect to {self.client.host}") from err
 
+        self._consecutive_errors = 0
+
+        # Non-critical calls: on a transient miss keep the last known raw
+        # response rather than resetting state to defaults for one cycle.
         try:
-            player_status = await self.client.async_get_player_status()
+            player_status = await self._async_request_once_retried(
+                self.client.async_get_player_status
+            )
         except YamahaCannotConnect:
-            player_status = {}
+            player_status = self.data.raw_player_status if self.data else {}
 
         try:
-            sound_settings = await self.client.async_get_sound_settings()
+            sound_settings = await self._async_request_once_retried(
+                self.client.async_get_sound_settings
+            )
         except YamahaCannotConnect:
-            sound_settings = {}
+            sound_settings = self.data.raw_sound_settings if self.data else {}
 
         # Parse device status
         uuid = device_status.get("uuid", "")
@@ -159,7 +205,7 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
         # Parse player status
         mode = str(player_status.get("mode", "0"))
         volume_raw = int(player_status.get("vol", "0"))
-        volume = volume_raw / MAX_VOL if MAX_VOL > 0 else 0.0
+        volume = volume_raw / (MAX_VOL * VOLUME_DISPLAY_SCALE) if MAX_VOL > 0 else 0.0
         muted = bool(int(player_status.get("mute", "0")))
         eq_raw = player_status.get("eq", "0")
         eq_mode = SOUND_MODES.get(str(eq_raw), "Normal")
@@ -278,4 +324,5 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
             wifi_channel=wifi_channel,
             raw_player_status=player_status,
             raw_device_status=device_status,
+            raw_sound_settings=sound_settings,
         )

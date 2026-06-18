@@ -64,6 +64,20 @@ PLYTRK_SERVICE_SCHEMA = vol.Schema({
 })
 
 
+def _build_ssl_context() -> ssl.SSLContext:
+    """Create the client SSL context.
+
+    Runs blocking disk I/O (default CA bundle + client.pem), so it must be
+    called from an executor, never directly in the event loop.
+    """
+    certpath = Path(__file__).parent / CONF_CERT_FILENAME
+    ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    ssl_ctx.load_cert_chain(certpath)
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    return ssl_ctx
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Yamaha Soundbar integration."""
     hass.data.setdefault(DOMAIN, {"entities": []})
@@ -74,12 +88,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: YamahaSoundbarConfigEntr
     """Set up Yamaha Soundbar from a config entry."""
     host = entry.data["host"]
 
-    # SSL context
-    certpath = Path(__file__).parent / CONF_CERT_FILENAME
-    ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-    ssl_ctx.load_cert_chain(certpath)
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode = ssl.CERT_NONE
+    # SSL context — built in an executor because create_default_context() and
+    # load_cert_chain() do blocking disk I/O (CA bundle + client.pem) that HA
+    # flags if run in the event loop.
+    ssl_ctx = await hass.async_add_executor_job(_build_ssl_context)
 
     # HTTP session
     session = async_create_clientsession(hass, verify_ssl=False)
