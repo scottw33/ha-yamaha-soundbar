@@ -32,8 +32,7 @@ ICON_PUSHSTREAM = "mdi:cast-audio"
 ICON_TTS = "mdi:text-to-speech"
 
 # Timing
-MAX_VOL = 100  # Device raw volume max (0-100)
-VOLUME_DISPLAY_SCALE = 2  # Yamaha iOS app shows raw/2 (0-50); match it in HA
+MAX_VOL = 100  # Device raw volume max (0-100); maps 1:1 to HA's 0-100% slider
 TCPPORT = 8899
 UPNP_TIMEOUT = 5
 API_TIMEOUT = 8  # Per-request timeout; the control API can briefly stall while streaming

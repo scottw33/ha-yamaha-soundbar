@@ -23,7 +23,6 @@ from .const import (
     MAX_CONSECUTIVE_ERRORS,
     MAX_VOL,
     POLL_RETRY_DELAY,
-    VOLUME_DISPLAY_SCALE,
     SCAN_INTERVAL,
     SOUND_MODES,
     SOURCES_DEFAULT,
@@ -205,7 +204,7 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
         # Parse player status
         mode = str(player_status.get("mode", "0"))
         volume_raw = int(player_status.get("vol", "0"))
-        volume = volume_raw / (MAX_VOL * VOLUME_DISPLAY_SCALE) if MAX_VOL > 0 else 0.0
+        volume = volume_raw / MAX_VOL if MAX_VOL > 0 else 0.0
         muted = bool(int(player_status.get("mute", "0")))
         eq_raw = player_status.get("eq", "0")
         eq_mode = SOUND_MODES.get(str(eq_raw), "Normal")
