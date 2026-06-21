@@ -1,9 +1,10 @@
 {
   "domain": "yamaha_soundbar",
   "name": "Yamaha Soundbar",
-  "version":"4.0.1",
-  "documentation": "https://github.com/osk2/yamaha-soundbar",
-  "issue_tracker": "https://github.com/osk2/yamaha-soundbar",
+  "version":"4.0.2",
+  "codeowners": ["@scottw33"],
+  "documentation": "https://github.com/scottw33/ha-yamaha-soundbar",
+  "issue_tracker": "https://github.com/scottw33/ha-yamaha-soundbar/issues",
   "after_dependencies": ["http", "tts", "media_source"],
   "config_flow": true,
   "iot_class": "local_polling",
