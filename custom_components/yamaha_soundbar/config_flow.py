@@ -2,18 +2,17 @@
 from __future__ import annotations
 
 import logging
-import ssl
-from pathlib import Path
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from . import _build_ssl_context
 from .client import YamahaCannotConnect, YamahaClient
 from .const import (
     CONF_ANNOUNCE_VOLUME_INCREASE,
@@ -48,15 +47,11 @@ class YamahaSoundbarConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             host = user_input[CONF_HOST]
 
-            # Create temporary SSL context for validation
-            certpath = Path(__file__).parent / "client.pem"
-            ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-            ssl_ctx.load_cert_chain(certpath)
-            ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode = ssl.CERT_NONE
-
-            connector = aiohttp.TCPConnector(ssl=ssl_ctx)
-            session = aiohttp.ClientSession(connector=connector)
+            # Build the SSL context off the event loop (blocking disk I/O) and
+            # reuse HA's shared aiohttp session. The client passes the context
+            # per-request, so the shared session needs no special config.
+            ssl_ctx = await self.hass.async_add_executor_job(_build_ssl_context)
+            session = async_get_clientsession(self.hass)
             try:
                 client = YamahaClient(host, session, ssl_ctx)
                 device_status = await client.async_get_device_status()
@@ -75,8 +70,6 @@ class YamahaSoundbarConfigFlow(ConfigFlow, domain=DOMAIN):
             except Exception:
                 _LOGGER.exception("Unexpected error during config flow")
                 errors["base"] = "unknown"
-            finally:
-                await session.close()
 
         return self.async_show_form(
             step_id="user",

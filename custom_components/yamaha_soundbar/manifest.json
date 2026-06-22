@@ -1,7 +1,7 @@
 {
   "domain": "yamaha_soundbar",
   "name": "Yamaha Soundbar",
-  "version":"4.0.3",
+  "version":"4.0.4",
   "codeowners": ["@scottw33"],
   "documentation": "https://github.com/scottw33/ha-yamaha-soundbar",
   "issue_tracker": "https://github.com/scottw33/ha-yamaha-soundbar/issues",
