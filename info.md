@@ -1,31 +1,19 @@
 # Yamaha Soundbar
 
-This component allows you to control Yamaha soundbar.
+Control Yamaha Linkplay-based soundbars from Home Assistant — playback, volume, source switching, sound modes, Yamaha audio settings (subwoofer, surround, clear voice, bass extension), multiroom and TTS.
 
-Tested on Yamaha YAS-109 & YAS-209, any Yamaha soundbar based on Linkplay A118 should be supported as well. (These include ATS-1090, ATS-2090, SR-X40A, SR-X50A, ATS-X500, Please make an issue in Github if you have a different model and it's not working, or even better if it is, so we can update the compatibility list.)
+A personal, maintained fork of [`osk2/yamaha-soundbar`](https://github.com/osk2/yamaha-soundbar), rebuilt around a UI config flow + `DataUpdateCoordinator` with stability and correctness fixes.
 
-## Installation
+**Tested on** YAS-109 and YAS-209; any Linkplay A118-based Yamaha soundbar should work (ATS-1090, ATS-2090, SR-X40A, SR-X50A, ATS-X500).
 
-#### 1. Install custom component
- - Using HACS
- - Install manually: copy all files in `custom_components/yamha_soundbar` to your `<config directory>/custom_components/yamaha_soundbar/` directory.
+## Setup
 
-#### 2. Restart Home-Assistant.
-#### 3. Add the configuration to your configuration.yaml.
-#### 4. Restart Home-Assistant again.
+1. Download via HACS and **restart Home Assistant**.
+2. **Settings → Devices & Services → Add Integration → Yamaha Soundbar**.
+3. Enter the soundbar's **IP address** (static IP / DHCP reservation recommended).
 
-### Configuration
+There is **no YAML configuration** — everything is configured in the UI. After setup, use **Configure** to set the volume step, TTS volume boost, Icecast metadata mode, and LED-off option.
 
-```yaml
-# Example configuration.yaml entry
-media_player:
-  - platform: yamaha_soundbar
-    host: 192.168.1.11
-    name: My Sound Bar # To name your sources (optional)
-    sources:
-      {
-        'HDMI': 'TV', 
-        'optical': 'Plexamp', 
-        'bluetooth': 'Bluetooth',
-      }
-```
+## Entities
+
+A single device with: `media_player` (transport, volume, source, sound mode, multiroom), **Sound program** & **Preset** selects, a **Subwoofer volume** number, **3D surround** / **Clear voice** / **Bass extension** / **LED** switches, and a **WiFi channel** sensor. Multiroom and TTS snapshot/restore are exposed as services.
