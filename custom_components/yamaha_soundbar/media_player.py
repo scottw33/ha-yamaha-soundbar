@@ -980,13 +980,14 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, input range 0..1."""
-        vol = round(int(volume * MAX_VOL))
+        # round() directly — int() would truncate (e.g. 0.29*100 == 28.999… -> 28)
+        vol = round(volume * MAX_VOL)
         await self.coordinator.client.async_set_volume(vol)
         await self.coordinator.async_request_refresh()
 
     async def async_volume_up(self) -> None:
         """Increase volume one step."""
-        current_vol = int(self.coordinator.data.volume * MAX_VOL)
+        current_vol = round(self.coordinator.data.volume * MAX_VOL)
         if current_vol >= 100 and not self.coordinator.data.muted:
             return
         volume = min(100, current_vol + int(self._volume_step))
@@ -995,7 +996,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
 
     async def async_volume_down(self) -> None:
         """Decrease volume one step."""
-        current_vol = int(self.coordinator.data.volume * MAX_VOL)
+        current_vol = round(self.coordinator.data.volume * MAX_VOL)
         if current_vol <= 0:
             return
         volume = max(0, current_vol - int(self._volume_step))
@@ -1824,7 +1825,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
             if self._source == "Network":
                 self._snap_uri = self._media_uri_final
 
-            current_vol = int(self.coordinator.data.volume * MAX_VOL)
+            current_vol = round(self.coordinator.data.volume * MAX_VOL)
 
             if self._playing_spotify:
                 if not switchinput:
