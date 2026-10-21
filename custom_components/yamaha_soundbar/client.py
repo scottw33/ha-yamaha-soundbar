@@ -6,7 +6,6 @@ import ssl
 from http import HTTPStatus
 
 import aiohttp
-import async_timeout
 
 from .const import API_TIMEOUT, MAX_VOL, TCPPORT
 
@@ -44,7 +43,7 @@ class YamahaClient:
         """Send command via HTTPS API. Returns text or parsed JSON depending on command."""
         url = f"https://{self._host}/httpapi.asp?command={command}"
         try:
-            async with async_timeout.timeout(timeout):
+            async with asyncio.timeout(timeout):
                 response = await self._session.get(url, ssl=self._ssl_ctx)
         except (asyncio.TimeoutError, aiohttp.ClientError) as error:
             _LOGGER.warning(
