@@ -44,6 +44,8 @@ from .coordinator import YamahaCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 type YamahaSoundbarConfigEntry = ConfigEntry[YamahaCoordinator]
 
 # Service schemas

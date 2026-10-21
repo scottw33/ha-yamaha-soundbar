@@ -11,7 +11,6 @@ import urllib.request
 from http import HTTPStatus
 
 import aiohttp
-import async_timeout
 import chardet
 import requests
 import xml.etree.ElementTree as ET
@@ -49,10 +48,12 @@ from .const import (
     AUTOIDLE_STATE_TIMEOUT,
     CONF_ANNOUNCE_VOLUME_INCREASE,
     CONF_ICECAST_METADATA,
+    CONF_LEDOFF,
     CONF_VOLUME_STEP,
     CUT_EXTENSIONS,
     DEFAULT_ANNOUNCE_VOLUME_INCREASE,
     DEFAULT_ICECAST_UPDATE,
+    DEFAULT_LEDOFF,
     DEFAULT_VOLUME_STEP,
     DOMAIN,
     FW_MROOM_RTR_MIN,
@@ -76,8 +77,6 @@ from .const import (
     SOURCES_MAP,
     SOURCES_STREAM,
     SPOTIFY_PAUSED_TIMEOUT,
-    UUID_ARYLIC,
-    FW_RAKOIT_UART_MIN,
 )
 from .coordinator import YamahaCoordinator
 from .entity import YamahaSoundbarEntity
@@ -118,7 +117,6 @@ async def async_setup_entry(
     coordinator: YamahaCoordinator = entry.runtime_data
     entity = YamahaDevice(coordinator, entry)
     async_add_entities([entity])
-    hass.data[DOMAIN]["entities"].append(entity)
 
 
 class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
@@ -227,10 +225,29 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         await super().async_added_to_hass()
+        # Register for the integration's custom services. Removed again in
+        # async_will_remove_from_hass so a reload doesn't leave a stale copy.
+        self.hass.data[DOMAIN]["entities"].append(self)
         # Listen for Music Assistant bus events
         self.async_on_remove(
             self.hass.bus.async_listen("mass_event", self.handle_event)
         )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister from the integration's custom services."""
+        entities = self.hass.data[DOMAIN]["entities"]
+        if self in entities:
+            entities.remove(self)
+        await super().async_will_remove_from_hass()
+
+    async def _async_apply_led_off(self) -> None:
+        """Turn the LED off over the TCP/UART channel."""
+        try:
+            await self.hass.async_add_executor_job(
+                self.coordinator.client.set_led_sync, False
+            )
+        except OSError as err:
+            _LOGGER.warning("For: %s could not turn the LED off: %s", self.entity_id, err)
 
     # ------------------------------------------------------------------
     # Coordinator callback — runs after every coordinator poll
@@ -290,16 +307,10 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                 if self._fwvercheck(data.firmware) < self._fwvercheck(FW_MROOM_RTR_MIN):
                     self._multiroom_wifidirect = True
             self._wifi_channel = data.wifi_channel
-            # LED off on first update if needed
-            if data.uuid and data.uuid.startswith(UUID_ARYLIC):
-                if self._fwvercheck(data.firmware) >= self._fwvercheck(FW_RAKOIT_UART_MIN):
-                    from .const import CONF_LEDOFF, DEFAULT_LEDOFF
-                    if self._entry.options.get(CONF_LEDOFF, DEFAULT_LEDOFF):
-                        self.hass.async_create_task(
-                            self.hass.async_add_executor_job(
-                                self.coordinator.client.set_led_sync, False
-                            )
-                        )
+            # Apply the "Turn off LED" option. The LED can't be read back, so
+            # this is the only way the switch state matches the device.
+            if self._entry.options.get(CONF_LEDOFF, DEFAULT_LEDOFF):
+                self.hass.async_create_task(self._async_apply_led_off())
             # Load USB tracklist if udisk source is available
             source_list = data.source_list
             if "udisk" in source_list:
@@ -1588,7 +1599,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
         """Parse an M3U playlist URL for actual streams, return the first one."""
         try:
             websession = async_get_clientsession(self.hass)
-            async with async_timeout.timeout(10):
+            async with asyncio.timeout(10):
                 response = await websession.get(playlist)
         except (asyncio.TimeoutError, aiohttp.ClientError):
             _LOGGER.warning("For: %s unable to get the M3U playlist: %s", self.entity_id, playlist)
@@ -1612,7 +1623,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
         """Parse a PLS playlist URL for actual streams, return the first one."""
         try:
             websession = async_get_clientsession(self.hass)
-            async with async_timeout.timeout(10):
+            async with asyncio.timeout(10):
                 response = await websession.get(playlist)
         except (asyncio.TimeoutError, aiohttp.ClientError):
             _LOGGER.warning("For: %s unable to get the PLS playlist: %s", self.entity_id, playlist)
