@@ -1,3 +1,4 @@
 pytest-homeassistant-custom-component
+async-upnp-client
 chardet
 validators~=0.12
