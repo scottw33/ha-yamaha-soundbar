@@ -76,6 +76,7 @@ Because it's installed via HACS, updates arrive in the HACS UI whenever a new re
 - **Poll resilience:** a single transient request failure no longer flips the entity to *unavailable* or logs an error; it retries once and only reports unavailable after several consecutive failed polls.
 - **No event-loop blocking:** the SSL context is built in an executor (previously caused repeated blocking-I/O warnings on every setup).
 - **Volume mapping:** the device's 0–100 range maps 1:1 to Home Assistant's 0–100% slider. The amplifier only has 50 real steps (each remote press is 2), so writes are snapped to even values and HA never shows a level the bar isn't at.
+- **Push updates:** volume and mute changes (including from the Yamaha remote, TV/CEC or Apple TV remote) arrive instantly over local UPnP eventing instead of waiting for the next poll. Polling continues as the fallback and for settings the bar doesn't push. No router UPnP needed; HA just has to be reachable from the bar on your LAN.
 - **Power:** turn on/off puts the bar in and out of standby (via the Yamaha `power saving` key, where `1` = on), and the entity shows `off` in standby.
 
 ## Credits & license

@@ -1,0 +1,3 @@
+pytest-homeassistant-custom-component
+chardet
+validators~=0.12
