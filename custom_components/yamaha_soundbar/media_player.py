@@ -35,6 +35,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_HOST,
     STATE_IDLE,
+    STATE_OFF,
     STATE_PAUSED,
     STATE_PLAYING,
     STATE_UNKNOWN,
@@ -67,6 +68,7 @@ from .const import (
     ICON_TTS,
     ICE_THROTTLE,
     MAX_VOL,
+    VOL_STEP_RAW,
     MROOM_UJWDIR,
     MROOM_UJWROU,
     PARALLEL_UPDATES,
@@ -117,6 +119,11 @@ async def async_setup_entry(
     coordinator: YamahaCoordinator = entry.runtime_data
     entity = YamahaDevice(coordinator, entry)
     async_add_entities([entity])
+
+
+def _snap_volume(raw: float) -> int:
+    """Round a raw 0-100 volume to a level the amplifier can actually play."""
+    return int(VOL_STEP_RAW * round(raw / VOL_STEP_RAW))
 
 
 class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
@@ -578,6 +585,8 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
     @property
     def state(self) -> str:
         """Return the state of the device."""
+        if not self.coordinator.data.power:
+            return STATE_OFF
         return self._state
 
     @property
@@ -621,7 +630,11 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
     def supported_features(self) -> MediaPlayerEntityFeature:
         """Flag media player features that are supported."""
         if self._slave_mode and self._features:
-            return self._features
+            return (
+                self._features
+                | MediaPlayerEntityFeature.TURN_ON
+                | MediaPlayerEntityFeature.TURN_OFF
+            )
 
         if self._playing_localfile or self._playing_spotify or self._playing_webplaylist:
             if self._state in [STATE_PLAYING, STATE_PAUSED]:
@@ -691,7 +704,13 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                 | MediaPlayerEntityFeature.STOP
             )
 
-        return self._features
+        if self._features is None:
+            return None
+        return (
+            self._features
+            | MediaPlayerEntityFeature.TURN_ON
+            | MediaPlayerEntityFeature.TURN_OFF
+        )
 
     @property
     def media_position(self) -> int | None:
@@ -992,7 +1011,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, input range 0..1."""
         # round() directly — int() would truncate (e.g. 0.29*100 == 28.999… -> 28)
-        vol = round(volume * MAX_VOL)
+        vol = _snap_volume(volume * MAX_VOL)
         await self.coordinator.client.async_set_volume(vol)
         await self.coordinator.async_request_refresh()
 
@@ -1001,7 +1020,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
         current_vol = round(self.coordinator.data.volume * MAX_VOL)
         if current_vol >= 100 and not self.coordinator.data.muted:
             return
-        volume = min(100, current_vol + int(self._volume_step))
+        volume = min(MAX_VOL, _snap_volume(current_vol + max(VOL_STEP_RAW, int(self._volume_step))))
         await self.coordinator.client.async_set_volume(volume)
         await self.coordinator.async_request_refresh()
 
@@ -1010,7 +1029,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
         current_vol = round(self.coordinator.data.volume * MAX_VOL)
         if current_vol <= 0:
             return
-        volume = max(0, current_vol - int(self._volume_step))
+        volume = max(0, _snap_volume(current_vol - max(VOL_STEP_RAW, int(self._volume_step))))
         await self.coordinator.client.async_set_volume(volume)
         await self.coordinator.async_request_refresh()
 
@@ -1020,16 +1039,14 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:
-        """Use unmute instead, because power is not supported."""
-        await self.async_mute_volume(False)
+        """Wake the soundbar from standby."""
+        await self.coordinator.client.async_set_power(True)
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self) -> None:
-        """Use mute instead, because power is not supported."""
-        await self.async_mute_volume(True)
-
-    async def async_toggle(self) -> None:
-        """Toggle mute."""
-        await self.async_mute_volume(not self.coordinator.data.muted)
+        """Put the soundbar in standby."""
+        await self.coordinator.client.async_set_power(False)
+        await self.coordinator.async_request_refresh()
 
     async def async_select_source(self, source: str) -> None:
         """Select input source."""

@@ -197,6 +197,14 @@ class YamahaClient:
     async def async_set_bass_extension(self, enabled: bool) -> None:
         await self._async_yamaha_data_set("bass extension", str(int(enabled)))
 
+    async def async_set_power(self, on: bool) -> None:
+        """Wake (True) or put the bar in standby (False).
+
+        Yamaha exposes this as "power saving", but on the YAS-209 the value is
+        the power state itself: "1" = on, "0" = standby (verified on hardware).
+        """
+        await self._async_yamaha_data_set("power saving", "1" if on else "0")
+
     def set_led_sync(self, enabled: bool) -> None:
         """Set LED on/off via TCP/UART. Synchronous — caller must wrap in executor."""
         value = "1" if enabled else "0"
