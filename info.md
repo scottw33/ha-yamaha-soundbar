@@ -16,4 +16,4 @@ There is **no YAML configuration** — everything is configured in the UI. After
 
 ## Entities
 
-A single device with: `media_player` (transport, volume, source, sound mode, multiroom), **Sound program** & **Preset** selects, a **Subwoofer volume** number, **3D surround** / **Clear voice** / **Bass extension** switches, and a **WiFi channel** sensor. Multiroom and TTS snapshot/restore are exposed as services.
+A single device with: `media_player` (transport, volume, source, sound mode, multiroom), **Sound program** & **Preset** selects, **Volume** and **Subwoofer volume** numbers, **3D surround** / **Clear voice** / **Bass extension** switches, and a **WiFi channel** sensor. Multiroom and TTS snapshot/restore are exposed as services.

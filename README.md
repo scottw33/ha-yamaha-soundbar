@@ -18,7 +18,7 @@ Adding the integration creates one device with these entities:
 | --- | --- |
 | `media_player` | Power (standby), playback transport, volume, mute, source selection, sound mode (EQ), shuffle/repeat, multiroom |
 | `select` | **Sound program**, **Preset** |
-| `number` | **Subwoofer volume** |
+| `number` | **Volume**, **Subwoofer volume** |
 | `switch` | **3D surround**, **Clear voice**, **Bass extension** |
 | `sensor` | **WiFi channel** |
 

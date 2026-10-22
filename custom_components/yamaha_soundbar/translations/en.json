@@ -40,6 +40,9 @@
       }
     },
     "number": {
+      "volume": {
+        "name": "Volume"
+      },
       "subwoofer_volume": {
         "name": "Subwoofer volume"
       }

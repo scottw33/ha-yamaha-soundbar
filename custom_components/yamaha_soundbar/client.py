@@ -6,9 +6,14 @@ from http import HTTPStatus
 
 import aiohttp
 
-from .const import API_TIMEOUT, MAX_VOL
+from .const import API_TIMEOUT, MAX_VOL, VOL_STEP_RAW
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def snap_volume(raw: float) -> int:
+    """Round a raw 0-100 volume to a level the amplifier can actually play."""
+    return int(VOL_STEP_RAW * round(raw / VOL_STEP_RAW))
 
 
 class YamahaClientError(Exception):

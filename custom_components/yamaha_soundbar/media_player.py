@@ -78,6 +78,7 @@ from .const import (
     SOURCES_STREAM,
     SPOTIFY_PAUSED_TIMEOUT,
 )
+from .client import snap_volume
 from .coordinator import YamahaCoordinator
 from .entity import YamahaSoundbarEntity
 
@@ -117,11 +118,6 @@ async def async_setup_entry(
     coordinator: YamahaCoordinator = entry.runtime_data
     entity = YamahaDevice(coordinator, entry)
     async_add_entities([entity])
-
-
-def _snap_volume(raw: float) -> int:
-    """Round a raw 0-100 volume to a level the amplifier can actually play."""
-    return int(VOL_STEP_RAW * round(raw / VOL_STEP_RAW))
 
 
 class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
@@ -996,7 +992,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, input range 0..1."""
         # round() directly — int() would truncate (e.g. 0.29*100 == 28.999… -> 28)
-        vol = _snap_volume(volume * MAX_VOL)
+        vol = snap_volume(volume * MAX_VOL)
         await self.coordinator.client.async_set_volume(vol)
         await self.coordinator.async_request_refresh()
 
@@ -1005,7 +1001,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
         current_vol = round(self.coordinator.data.volume * MAX_VOL)
         if current_vol >= 100 and not self.coordinator.data.muted:
             return
-        volume = min(MAX_VOL, _snap_volume(current_vol + max(VOL_STEP_RAW, int(self._volume_step))))
+        volume = min(MAX_VOL, snap_volume(current_vol + max(VOL_STEP_RAW, int(self._volume_step))))
         await self.coordinator.client.async_set_volume(volume)
         await self.coordinator.async_request_refresh()
 
@@ -1014,7 +1010,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
         current_vol = round(self.coordinator.data.volume * MAX_VOL)
         if current_vol <= 0:
             return
-        volume = max(0, _snap_volume(current_vol - max(VOL_STEP_RAW, int(self._volume_step))))
+        volume = max(0, snap_volume(current_vol - max(VOL_STEP_RAW, int(self._volume_step))))
         await self.coordinator.client.async_set_volume(volume)
         await self.coordinator.async_request_refresh()
 
