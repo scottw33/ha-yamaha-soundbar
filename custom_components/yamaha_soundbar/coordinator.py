@@ -42,6 +42,17 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+class _VolumeEventsDevice(DmrDevice):
+    """DmrDevice that only subscribes to RenderingControl.
+
+    The bar's AVTransport events carry values its own service description
+    does not allow (e.g. PlaybackStorageMedium=OPTICAL), which async_upnp_client
+    logs as errors. Volume and mute are all we use, so skip AVTransport.
+    """
+
+    _SERVICE_TYPES = {"RC": DmrDevice._SERVICE_TYPES["RC"]}
+
+
 @dataclass
 class YamahaData:
     """Parsed device state from all three API calls."""
@@ -169,7 +180,9 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
                 await server.async_start_server()
                 self._notify_server = server
             if self._dmr is None:
-                self._dmr = DmrDevice(self._upnp_device, self._notify_server.event_handler)
+                self._dmr = _VolumeEventsDevice(
+                    self._upnp_device, self._notify_server.event_handler
+                )
                 self._dmr.on_event = self._handle_upnp_event
             await self._dmr.async_subscribe_services(auto_resubscribe=True)
         except (UpnpError, OSError) as err:

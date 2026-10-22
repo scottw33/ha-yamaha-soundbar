@@ -15,7 +15,10 @@ DESC = """<?xml version="1.0"?>
 <manufacturer>Yamaha</manufacturer><modelName>YAS-209</modelName><UDN>uuid:FFB8F002-8DB7-82D1-C580-978DFFB8F002</UDN>
 <serviceList><service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>
 <serviceId>urn:upnp-org:serviceId:RenderingControl</serviceId><SCPDURL>/rc.xml</SCPDURL>
-<controlURL>/rc/ctrl</controlURL><eventSubURL>/rc/evt</eventSubURL></service></serviceList></device></root>"""
+<controlURL>/rc/ctrl</controlURL><eventSubURL>/rc/evt</eventSubURL></service>
+<service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+<serviceId>urn:upnp-org:serviceId:AVTransport</serviceId><SCPDURL>/avt.xml</SCPDURL>
+<controlURL>/avt/ctrl</controlURL><eventSubURL>/avt/evt</eventSubURL></service></serviceList></device></root>"""
 
 SCPD = """<?xml version="1.0"?>
 <scpd xmlns="urn:schemas-upnp-org:service-1-0"><specVersion><major>1</major><minor>0</minor></specVersion>
@@ -30,6 +33,16 @@ SCPD = """<?xml version="1.0"?>
 <stateVariable sendEvents="no"><name>Mute</name><dataType>boolean</dataType></stateVariable>
 <stateVariable sendEvents="no"><name>A_ARG_TYPE_InstanceID</name><dataType>ui4</dataType></stateVariable>
 <stateVariable sendEvents="no"><name>A_ARG_TYPE_Channel</name><dataType>string</dataType></stateVariable>
+</serviceStateTable></scpd>"""
+
+# The real bar's AVTransport events break its own allowed values, so the
+# coordinator must never subscribe to it.
+AVT_SCPD = """<?xml version="1.0"?>
+<scpd xmlns="urn:schemas-upnp-org:service-1-0"><specVersion><major>1</major><minor>0</minor></specVersion>
+<actionList/><serviceStateTable>
+<stateVariable sendEvents="yes"><name>LastChange</name><dataType>string</dataType></stateVariable>
+<stateVariable sendEvents="no"><name>PlaybackStorageMedium</name><dataType>string</dataType>
+<allowedValueList><allowedValue>NONE</allowedValue><allowedValue>NETWORK</allowedValue></allowedValueList></stateVariable>
 </serviceStateTable></scpd>"""
 
 
@@ -47,12 +60,20 @@ class FakeBar:
         self.subs = 0
         self.unsubs = 0
         self.seq = 0
+        self.avt_subs = 0
 
     async def desc(self, r):
         return web.Response(text=DESC, content_type="text/xml")
 
     async def scpd(self, r):
         return web.Response(text=SCPD, content_type="text/xml")
+
+    async def avt_scpd(self, r):
+        return web.Response(text=AVT_SCPD, content_type="text/xml")
+
+    async def avt_evt(self, r):
+        self.avt_subs += 1
+        return web.Response(headers={"SID": "uuid:sub-avt", "TIMEOUT": "Second-1800"})
 
     async def evt(self, r):
         if r.method == "SUBSCRIBE":
@@ -81,6 +102,8 @@ async def bar(socket_enabled):
     app.router.add_get("/description.xml", fb.desc)
     app.router.add_get("/rc.xml", fb.scpd)
     app.router.add_route("*", "/rc/evt", fb.evt)
+    app.router.add_get("/avt.xml", fb.avt_scpd)
+    app.router.add_route("*", "/avt/evt", fb.avt_evt)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", 49152)
@@ -104,6 +127,7 @@ async def test_push_updates_volume_and_mute(hass, bar, socket_enabled):
     assert coord.data.volume == 0.20 and coord.data.muted is False
     assert coord.events_subscribed, "should have subscribed"
     assert bar.subs == 1 and bar.callback.startswith("http://127.0.0.1:")
+    assert bar.avt_subs == 0, "AVTransport must not be subscribed"
 
     updates = []
     coord.async_add_listener(lambda: updates.append((coord.data.volume, coord.data.muted)))
