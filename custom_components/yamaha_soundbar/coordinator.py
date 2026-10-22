@@ -2,18 +2,23 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from async_upnp_client.aiohttp import AiohttpRequester
+from async_upnp_client.aiohttp import AiohttpNotifyServer, AiohttpRequester
+from async_upnp_client.client import UpnpService, UpnpStateVariable
 from async_upnp_client.client_factory import UpnpFactory
+from async_upnp_client.exceptions import UpnpError
+from async_upnp_client.profiles.dlna import DmrDevice
 
+from homeassistant.components import network
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.media_player.const import RepeatMode
 from homeassistant.const import STATE_IDLE, STATE_PAUSED, STATE_PLAYING, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util.dt import utcnow
 
@@ -123,7 +128,115 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
 
         # UPnP factory
         requester = AiohttpRequester(UPNP_TIMEOUT)
+        self._upnp_requester = requester
         self._upnp_factory = UpnpFactory(requester)
+
+        # UPnP eventing (push updates). Polling stays on as the fallback and
+        # for everything the bar doesn't event (power, sound settings).
+        self._notify_server: AiohttpNotifyServer | None = None
+        self._dmr: DmrDevice | None = None
+        self._events_last_attempt: float | None = None
+        self._events_logged = False
+
+    @property
+    def events_subscribed(self) -> bool:
+        """Whether UPnP push updates are currently active."""
+        return self._dmr is not None and self._dmr.is_subscribed
+
+    async def _async_ensure_event_subscription(self) -> None:
+        """Subscribe to RenderingControl/AVTransport events, retrying with backoff.
+
+        The YAS-209 periodically drops off SSDP (byebye/alive), which can fail a
+        renewal. A failed renewal empties the subscription list, and the next
+        poll lands here and subscribes again.
+        """
+        if self._upnp_device is None or self.events_subscribed:
+            return
+        now = utcnow().timestamp()
+        if (
+            self._events_last_attempt is not None
+            and now < self._events_last_attempt + UPNP_RETRY_INTERVAL.total_seconds()
+        ):
+            return
+        self._events_last_attempt = now
+
+        try:
+            if self._notify_server is None:
+                source_ip = await network.async_get_source_ip(
+                    self.hass, target_ip=self.client.host
+                )
+                server = AiohttpNotifyServer(self._upnp_requester, source=(source_ip, 0))
+                await server.async_start_server()
+                self._notify_server = server
+            if self._dmr is None:
+                self._dmr = DmrDevice(self._upnp_device, self._notify_server.event_handler)
+                self._dmr.on_event = self._handle_upnp_event
+            await self._dmr.async_subscribe_services(auto_resubscribe=True)
+        except (UpnpError, OSError) as err:
+            _LOGGER.debug(
+                "UPnP event subscription to %s failed, staying on polling: %r",
+                self.client.host,
+                err,
+            )
+            return
+
+        self._events_last_attempt = None
+        if not self._events_logged:
+            _LOGGER.info("Receiving UPnP push updates from %s", self.client.host)
+            self._events_logged = True
+        else:
+            _LOGGER.debug("Re-subscribed to UPnP events from %s", self.client.host)
+
+    @callback
+    def _handle_upnp_event(
+        self, service: UpnpService, state_variables: Sequence[UpnpStateVariable]
+    ) -> None:
+        """Apply pushed volume/mute changes without waiting for the next poll."""
+        if not state_variables:
+            # A renewal failed. The next poll re-subscribes.
+            _LOGGER.debug("UPnP subscription to %s lapsed", self.client.host)
+            return
+        if (
+            self.data is None
+            or self._dmr is None
+            or service.service_id != "urn:upnp-org:serviceId:RenderingControl"
+        ):
+            return
+
+        changes: dict = {}
+        level = self._dmr.volume_level
+        if level is not None:
+            volume = round(level * MAX_VOL) / MAX_VOL
+            if volume != self.data.volume:
+                changes["volume"] = volume
+        muted = self._dmr.is_volume_muted
+        if muted is not None and muted != self.data.muted:
+            changes["muted"] = muted
+        if not changes:
+            return
+
+        raw = dict(self.data.raw_player_status)
+        if "volume" in changes:
+            raw["vol"] = str(round(changes["volume"] * MAX_VOL))
+        if "muted" in changes:
+            raw["mute"] = "1" if changes["muted"] else "0"
+        _LOGGER.debug("UPnP push from %s: %s", self.client.host, changes)
+        self.async_set_updated_data(
+            dataclasses.replace(self.data, raw_player_status=raw, **changes)
+        )
+
+    async def async_shutdown(self) -> None:
+        """Unsubscribe from UPnP events and stop the callback server."""
+        await super().async_shutdown()
+        dmr, self._dmr = self._dmr, None
+        server, self._notify_server = self._notify_server, None
+        if dmr is not None:
+            try:
+                await dmr.async_unsubscribe_services()
+            except UpnpError as err:
+                _LOGGER.debug("UPnP unsubscribe from %s failed: %r", self.client.host, err)
+        if server is not None:
+            await server.async_stop_server()
 
     @property
     def upnp_device(self):
@@ -279,6 +392,8 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
                 except Exception as err:
                     self._upnp_last_attempt = utcnow().timestamp()
                     _LOGGER.warning("Failed UPnP setup for '%s': %s", self.client.host, err)
+
+        await self._async_ensure_event_subscription()
 
         self._first_update = False
 

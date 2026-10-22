@@ -10,8 +10,11 @@
     "@scottw33"
   ],
   "config_flow": true,
+  "dependencies": [
+    "network"
+  ],
   "documentation": "https://github.com/scottw33/ha-yamaha-soundbar",
-  "iot_class": "local_polling",
+  "iot_class": "local_push",
   "issue_tracker": "https://github.com/scottw33/ha-yamaha-soundbar/issues",
   "requirements": [
     "async-upnp-client>=0.27",
