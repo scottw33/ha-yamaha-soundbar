@@ -19,7 +19,7 @@ Adding the integration creates one device with these entities:
 | `media_player` | Power (standby), playback transport, volume, mute, source selection, sound mode (EQ), shuffle/repeat, multiroom |
 | `select` | **Sound program**, **Preset** |
 | `number` | **Subwoofer volume** |
-| `switch` | **3D surround**, **Clear voice**, **Bass extension**, **LED** |
+| `switch` | **3D surround**, **Clear voice**, **Bass extension** |
 | `sensor` | **WiFi channel** |
 
 ### Services
@@ -65,7 +65,6 @@ After setup, use **Configure** on the integration to adjust:
 | **Volume step** | Step size (1–25) for the volume up/down buttons |
 | **TTS volume boost** | Volume increase (0–50) applied when announcing TTS |
 | **Icecast metadata mode** | `Off`, `StationName`, or `StationNameSongTitle` |
-| **Turn off LED** | Keep the soundbar's LED off |
 
 ## Updating
 

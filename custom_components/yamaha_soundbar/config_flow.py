@@ -17,14 +17,12 @@ from .client import YamahaCannotConnect, YamahaClient
 from .const import (
     CONF_ANNOUNCE_VOLUME_INCREASE,
     CONF_ICECAST_METADATA,
-    CONF_LEDOFF,
     CONF_SOURCE_IGNORE,
     CONF_SOURCES,
     CONF_UUID,
     CONF_VOLUME_STEP,
     DEFAULT_ANNOUNCE_VOLUME_INCREASE,
     DEFAULT_ICECAST_UPDATE,
-    DEFAULT_LEDOFF,
     DEFAULT_VOLUME_STEP,
     DOMAIN,
 )
@@ -102,7 +100,6 @@ class YamahaSoundbarConfigFlow(ConfigFlow, domain=DOMAIN):
                 "announce_volume_increase", DEFAULT_ANNOUNCE_VOLUME_INCREASE
             ),
             CONF_ICECAST_METADATA: import_data.get("icecast_metadata", DEFAULT_ICECAST_UPDATE),
-            CONF_LEDOFF: import_data.get("led_off", DEFAULT_LEDOFF),
         }
 
         return self.async_create_entry(
@@ -147,10 +144,6 @@ class YamahaSoundbarOptionsFlow(OptionsFlow):
                         CONF_ICECAST_METADATA,
                         default=options.get(CONF_ICECAST_METADATA, DEFAULT_ICECAST_UPDATE),
                     ): vol.In(["Off", "StationName", "StationNameSongTitle"]),
-                    vol.Optional(
-                        CONF_LEDOFF,
-                        default=options.get(CONF_LEDOFF, DEFAULT_LEDOFF),
-                    ): bool,
                 }
             ),
         )

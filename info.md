@@ -12,8 +12,8 @@ A personal, maintained fork of [`osk2/yamaha-soundbar`](https://github.com/osk2/
 2. **Settings → Devices & Services → Add Integration → Yamaha Soundbar**.
 3. Enter the soundbar's **IP address** (static IP / DHCP reservation recommended).
 
-There is **no YAML configuration** — everything is configured in the UI. After setup, use **Configure** to set the volume step, TTS volume boost, Icecast metadata mode, and LED-off option.
+There is **no YAML configuration** — everything is configured in the UI. After setup, use **Configure** to set the volume step, TTS volume boost, and Icecast metadata mode.
 
 ## Entities
 
-A single device with: `media_player` (transport, volume, source, sound mode, multiroom), **Sound program** & **Preset** selects, a **Subwoofer volume** number, **3D surround** / **Clear voice** / **Bass extension** / **LED** switches, and a **WiFi channel** sensor. Multiroom and TTS snapshot/restore are exposed as services.
+A single device with: `media_player` (transport, volume, source, sound mode, multiroom), **Sound program** & **Preset** selects, a **Subwoofer volume** number, **3D surround** / **Clear voice** / **Bass extension** switches, and a **WiFi channel** sensor. Multiroom and TTS snapshot/restore are exposed as services.

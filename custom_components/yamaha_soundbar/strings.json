@@ -25,28 +25,40 @@
         "data": {
           "volume_step": "Volume step",
           "announce_volume_increase": "TTS volume boost",
-          "icecast_metadata": "Icecast metadata mode",
-          "led_off": "Turn off LED"
+          "icecast_metadata": "Icecast metadata mode"
         }
       }
     }
   },
   "entity": {
     "select": {
-      "sound_program": { "name": "Sound program" },
-      "preset": { "name": "Preset" }
+      "sound_program": {
+        "name": "Sound program"
+      },
+      "preset": {
+        "name": "Preset"
+      }
     },
     "number": {
-      "subwoofer_volume": { "name": "Subwoofer volume" }
+      "subwoofer_volume": {
+        "name": "Subwoofer volume"
+      }
     },
     "switch": {
-      "surround": { "name": "3D surround" },
-      "clear_voice": { "name": "Clear voice" },
-      "bass_extension": { "name": "Bass extension" },
-      "led": { "name": "LED" }
+      "surround": {
+        "name": "3D surround"
+      },
+      "clear_voice": {
+        "name": "Clear voice"
+      },
+      "bass_extension": {
+        "name": "Bass extension"
+      }
     },
     "sensor": {
-      "wifi_channel": { "name": "WiFi channel" }
+      "wifi_channel": {
+        "name": "WiFi channel"
+      }
     }
   }
 }
