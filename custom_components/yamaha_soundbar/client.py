@@ -1,13 +1,12 @@
 """API client for Yamaha Linkplay A118 based devices."""
 import asyncio
 import logging
-import socket
 import ssl
 from http import HTTPStatus
 
 import aiohttp
 
-from .const import API_TIMEOUT, MAX_VOL, TCPPORT
+from .const import API_TIMEOUT, MAX_VOL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,7 +20,7 @@ class YamahaCannotConnect(YamahaClientError):
 
 
 class YamahaClient:
-    """Communicate with a Yamaha Linkplay device via HTTP, TCP/UART, and UPnP."""
+    """Communicate with a Yamaha Linkplay device via HTTP and UPnP."""
 
     def __init__(
         self,
@@ -62,24 +61,6 @@ class YamahaClient:
         if command in json_commands:
             return await response.json(content_type=None)
         return await response.text()
-
-    def _tcpuart_sync(self, cmd: str) -> str:
-        """Synchronous TCP UART communication. Caller must wrap in executor."""
-        lenc = format(len(cmd), "02x")
-        hed1 = "18 96 18 20 "
-        hed2 = " 00 00 00 c1 02 00 00 00 00 00 00 00 00 00 00 "
-        cmhx = " ".join(hex(ord(c))[2:] for c in cmd)
-
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(API_TIMEOUT)
-            s.connect((self._host, TCPPORT))
-            s.send(bytes.fromhex(hed1 + lenc + hed2 + cmhx))
-            data = str(repr(s.recv(1024))).encode().decode("unicode-escape")
-
-        pos = data.find("AXX")
-        if pos == -1:
-            pos = data.find("MCU")
-        return data[pos : len(data) - 2]
 
     # --- Status/Query ---
 
@@ -204,11 +185,6 @@ class YamahaClient:
         the power state itself: "1" = on, "0" = standby (verified on hardware).
         """
         await self._async_yamaha_data_set("power saving", "1" if on else "0")
-
-    def set_led_sync(self, enabled: bool) -> None:
-        """Set LED on/off via TCP/UART. Synchronous — caller must wrap in executor."""
-        value = "1" if enabled else "0"
-        self._tcpuart_sync(f"MCU+PAS+RAKOIT:LED:{value}&")
 
     async def async_recall_preset(self, number: int) -> None:
         await self._async_httpapi(f"MCUKeyShortClick:{number}")

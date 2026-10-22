@@ -22,14 +22,12 @@ from .const import (
     CONF_ANNOUNCE_VOLUME_INCREASE,
     CONF_CERT_FILENAME,
     CONF_ICECAST_METADATA,
-    CONF_LEDOFF,
     CONF_SOURCE_IGNORE,
     CONF_SOURCES,
     CONF_UUID,
     CONF_VOLUME_STEP,
     DEFAULT_ANNOUNCE_VOLUME_INCREASE,
     DEFAULT_ICECAST_UPDATE,
-    DEFAULT_LEDOFF,
     DEFAULT_VOLUME_STEP,
     DOMAIN,
     PLATFORMS,
@@ -111,10 +109,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: YamahaSoundbarConfigEntr
         source_mapping=source_mapping,
         source_ignore=source_ignore,
     )
-
-    # Set initial LED state from options
-    led_off = entry.options.get(CONF_LEDOFF, DEFAULT_LEDOFF)
-    coordinator.set_led_state(not led_off)
 
     await coordinator.async_config_entry_first_refresh()
 

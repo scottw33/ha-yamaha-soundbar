@@ -23,7 +23,6 @@ class YamahaSwitchEntityDescription(SwitchEntityDescription):
     value_fn: Callable[[YamahaData], bool]
     turn_on_fn: Callable[[YamahaClient], Coroutine[Any, Any, None]]
     turn_off_fn: Callable[[YamahaClient], Coroutine[Any, Any, None]]
-    is_led: bool = False
 
 
 SWITCH_DESCRIPTIONS: tuple[YamahaSwitchEntityDescription, ...] = (
@@ -50,15 +49,6 @@ SWITCH_DESCRIPTIONS: tuple[YamahaSwitchEntityDescription, ...] = (
         value_fn=lambda data: data.bass_extension,
         turn_on_fn=lambda client: client.async_set_bass_extension(True),
         turn_off_fn=lambda client: client.async_set_bass_extension(False),
-    ),
-    YamahaSwitchEntityDescription(
-        key="led",
-        translation_key="led",
-        entity_category=EntityCategory.CONFIG,
-        value_fn=lambda data: data.led,
-        turn_on_fn=lambda client: client.async_set_surround(True),  # unused, see is_led
-        turn_off_fn=lambda client: client.async_set_surround(False),  # unused, see is_led
-        is_led=True,
     ),
 )
 
@@ -95,21 +85,9 @@ class YamahaSoundbarSwitch(YamahaSoundbarEntity, SwitchEntity):
         return self.entity_description.value_fn(self.coordinator.data)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        if self.entity_description.is_led:
-            await self.hass.async_add_executor_job(
-                self.coordinator.client.set_led_sync, True
-            )
-            self.coordinator.set_led_state(True)
-        else:
-            await self.entity_description.turn_on_fn(self.coordinator.client)
+        await self.entity_description.turn_on_fn(self.coordinator.client)
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        if self.entity_description.is_led:
-            await self.hass.async_add_executor_job(
-                self.coordinator.client.set_led_sync, False
-            )
-            self.coordinator.set_led_state(False)
-        else:
-            await self.entity_description.turn_off_fn(self.coordinator.client)
+        await self.entity_description.turn_off_fn(self.coordinator.client)
         await self.coordinator.async_request_refresh()

@@ -49,12 +49,10 @@ from .const import (
     AUTOIDLE_STATE_TIMEOUT,
     CONF_ANNOUNCE_VOLUME_INCREASE,
     CONF_ICECAST_METADATA,
-    CONF_LEDOFF,
     CONF_VOLUME_STEP,
     CUT_EXTENSIONS,
     DEFAULT_ANNOUNCE_VOLUME_INCREASE,
     DEFAULT_ICECAST_UPDATE,
-    DEFAULT_LEDOFF,
     DEFAULT_VOLUME_STEP,
     DOMAIN,
     FW_MROOM_RTR_MIN,
@@ -247,15 +245,6 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
             entities.remove(self)
         await super().async_will_remove_from_hass()
 
-    async def _async_apply_led_off(self) -> None:
-        """Turn the LED off over the TCP/UART channel."""
-        try:
-            await self.hass.async_add_executor_job(
-                self.coordinator.client.set_led_sync, False
-            )
-        except OSError as err:
-            _LOGGER.warning("For: %s could not turn the LED off: %s", self.entity_id, err)
-
     # ------------------------------------------------------------------
     # Coordinator callback — runs after every coordinator poll
     # ------------------------------------------------------------------
@@ -303,7 +292,7 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                 self.async_write_ha_state()
                 return
 
-        # First update — detect firmware capabilities, LED, UPnP tracklist
+        # First update — detect firmware capabilities, UPnP tracklist
         if self._first_update:
             self._first_update = False
             self._duration = 0
@@ -314,10 +303,6 @@ class YamahaDevice(YamahaSoundbarEntity, MediaPlayerEntity):
                 if self._fwvercheck(data.firmware) < self._fwvercheck(FW_MROOM_RTR_MIN):
                     self._multiroom_wifidirect = True
             self._wifi_channel = data.wifi_channel
-            # Apply the "Turn off LED" option. The LED can't be read back, so
-            # this is the only way the switch state matches the device.
-            if self._entry.options.get(CONF_LEDOFF, DEFAULT_LEDOFF):
-                self.hass.async_create_task(self._async_apply_led_off())
             # Load USB tracklist if udisk source is available
             source_list = data.source_list
             if "udisk" in source_list:

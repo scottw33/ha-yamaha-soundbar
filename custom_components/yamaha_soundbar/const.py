@@ -12,13 +12,11 @@ CONF_COMMONSOURCES = "common_sources"
 CONF_SOURCE_IGNORE = "source_ignore"
 CONF_ICECAST_METADATA = "icecast_metadata"
 CONF_VOLUME_STEP = "volume_step"
-CONF_LEDOFF = "led_off"
 CONF_ANNOUNCE_VOLUME_INCREASE = "announce_volume_increase"
 CONF_CERT_FILENAME = "client.pem"
 
 # Defaults
 DEFAULT_ICECAST_UPDATE = "StationName"
-DEFAULT_LEDOFF = False
 DEFAULT_VOLUME_STEP = 5
 DEFAULT_ANNOUNCE_VOLUME_INCREASE = 15
 
@@ -36,7 +34,6 @@ MAX_VOL = 100  # Device raw volume max (0-100); maps 1:1 to HA's 0-100% slider
 # The amplifier only has 50 steps: each remote press moves raw volume by 2, and
 # odd raw values aren't real levels. Writes are snapped to even values.
 VOL_STEP_RAW = 2
-TCPPORT = 8899
 UPNP_TIMEOUT = 5
 API_TIMEOUT = 8  # Per-request timeout; the control API can briefly stall while streaming
 SCAN_INTERVAL = timedelta(seconds=10)
@@ -57,9 +54,7 @@ PARALLEL_UPDATES = 1
 
 # Firmware version thresholds
 FW_MROOM_RTR_MIN = "4.2.8020"
-FW_RAKOIT_UART_MIN = "4.2.9326"
 FW_SLOW_STREAMS = "4.6"
-UUID_ARYLIC = "FF31F09E"
 ROOTDIR_USB = "/media/sda1/"
 
 # Audio file extensions

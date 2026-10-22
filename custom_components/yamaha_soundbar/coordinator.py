@@ -76,9 +76,6 @@ class YamahaData:
     clear_voice: bool = False
     bass_extension: bool = False
 
-    # LED state (tracked locally — no read-back)
-    led: bool = True
-
     # Multiroom
     group_members: list[str] = field(default_factory=list)
     is_master: bool = False
@@ -122,7 +119,6 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
         self._upnp_device = None
         self._upnp_last_attempt: float | None = None
         self._first_update = True
-        self._led_state: bool = True  # Assume on until told otherwise
         self._consecutive_errors = 0  # Failed polls in a row (poll resilience)
 
         # UPnP factory
@@ -133,10 +129,6 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
     def upnp_device(self):
         """Expose UPnP device for media player use."""
         return self._upnp_device
-
-    def set_led_state(self, state: bool) -> None:
-        """Update locally tracked LED state (no device read-back available)."""
-        self._led_state = state
 
     async def _async_request_once_retried(
         self, request: Callable[[], Awaitable[dict]]
@@ -316,7 +308,6 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
             surround=surround,
             clear_voice=clear_voice,
             bass_extension=bass_extension,
-            led=self._led_state,
             group_members=group_members,
             is_master=is_master,
             slave=slave_mode,
