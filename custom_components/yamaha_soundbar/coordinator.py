@@ -69,6 +69,7 @@ class YamahaData:
     eq_mode: str = "Normal"
 
     # Yamaha sound settings (from YAMAHA_DATA_GET)
+    power: bool = True
     sound_program: str = ""
     subwoofer_volume: int = 0
     surround: bool = False
@@ -261,7 +262,8 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
             slave_ip = player_status.get("slave_ip")
         # TODO: Parse multiroom group members from device status
 
-        # Sound settings
+        # Sound settings. "power saving" is the power state: "1" = on.
+        power = str(sound_settings.get("power saving", "1")) == "1"
         sound_program = sound_settings.get("sound program", "")
         try:
             subwoofer_volume = int(sound_settings.get("subwoofer volume", 0))
@@ -308,6 +310,7 @@ class YamahaCoordinator(DataUpdateCoordinator[YamahaData]):
             shuffle=shuffle,
             repeat=repeat,
             eq_mode=eq_mode,
+            power=power,
             sound_program=sound_program,
             subwoofer_volume=subwoofer_volume,
             surround=surround,

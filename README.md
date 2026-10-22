@@ -16,7 +16,7 @@ Adding the integration creates one device with these entities:
 
 | Platform | Entities |
 | --- | --- |
-| `media_player` | Playback transport, volume, mute, source selection, sound mode (EQ), shuffle/repeat, multiroom |
+| `media_player` | Power (standby), playback transport, volume, mute, source selection, sound mode (EQ), shuffle/repeat, multiroom |
 | `select` | **Sound program**, **Preset** |
 | `number` | **Subwoofer volume** |
 | `switch` | **3D surround**, **Clear voice**, **Bass extension**, **LED** |
@@ -76,7 +76,8 @@ Because it's installed via HACS, updates arrive in the HACS UI whenever a new re
 - Rebuilt as a config-flow + `DataUpdateCoordinator` integration (v4.0.0).
 - **Poll resilience:** a single transient request failure no longer flips the entity to *unavailable* or logs an error; it retries once and only reports unavailable after several consecutive failed polls.
 - **No event-loop blocking:** the SSL context is built in an executor (previously caused repeated blocking-I/O warnings on every setup).
-- **Volume mapping:** the device's 0–100 range maps 1:1 to Home Assistant's 0–100% slider for single-unit steps, with the rounding corrected so a level can't land one step low.
+- **Volume mapping:** the device's 0–100 range maps 1:1 to Home Assistant's 0–100% slider. The amplifier only has 50 real steps (each remote press is 2), so writes are snapped to even values and HA never shows a level the bar isn't at.
+- **Power:** turn on/off puts the bar in and out of standby (via the Yamaha `power saving` key, where `1` = on), and the entity shows `off` in standby.
 
 ## Credits & license
 

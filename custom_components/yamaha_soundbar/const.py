@@ -33,6 +33,9 @@ ICON_TTS = "mdi:text-to-speech"
 
 # Timing
 MAX_VOL = 100  # Device raw volume max (0-100); maps 1:1 to HA's 0-100% slider
+# The amplifier only has 50 steps: each remote press moves raw volume by 2, and
+# odd raw values aren't real levels. Writes are snapped to even values.
+VOL_STEP_RAW = 2
 TCPPORT = 8899
 UPNP_TIMEOUT = 5
 API_TIMEOUT = 8  # Per-request timeout; the control API can briefly stall while streaming
