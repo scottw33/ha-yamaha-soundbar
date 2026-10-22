@@ -16,6 +16,7 @@ restored at the end, including on Ctrl-C, and a final guard pulls volume
 back to the starting level if anything left it higher.
 
 Usage:  python3 probe_yas209.py [IP]   (default 192.168.1.250)
+        ONLY=2,3,6 python3 probe_yas209.py   to run just those sections
 Cert:   client.pem from custom_components/yamaha_soundbar, found relative to
         this script, or set YAS_CERT=/path/to/client.pem
 Output: printed and saved to ~/yas209_probe_<timestamp>.txt
@@ -35,6 +36,8 @@ CERT = os.environ.get("YAS_CERT") or str(
     Path(__file__).resolve().parent.parent
     / "custom_components" / "yamaha_soundbar" / "client.pem"
 )
+# Comma-separated section numbers to run, e.g. ONLY=2,3,6 (1 always runs)
+ONLY = {x.strip() for x in os.environ.get("ONLY", "").split(",") if x.strip()}
 OUT = Path.home() / f"yas209_probe_{datetime.now():%Y%m%d_%H%M%S}.txt"
 _log = open(OUT, "w")
 
@@ -91,17 +94,27 @@ def tcp(cmd):
         + bytes(8)
         + payload
     )
-    with socket.create_connection((HOST, 8899), timeout=3) as s:
+    try:
+        s = socket.create_connection((HOST, 8899), timeout=3)
+    except OSError as err:
+        return f"(connect failed: {err!r})"
+    with s:
         s.sendall(packet)
         try:
             return repr(s.recv(1024))
         except socket.timeout:
             return "(no reply)"
+        except OSError as err:
+            return f"(recv failed: {err!r})"
 
 
 # Settings to put back at the end: key -> original value
 restore = {}
 start_vol = None
+
+
+def want(n):
+    return not ONLY or str(n) in ONLY
 
 
 def section(title):
@@ -126,87 +139,94 @@ def main():
     log(f"plm_support = {sx.get('plm_support')}  group = {sx.get('group')}")
 
     # ---- 2. Power saving -------------------------------------------------
-    section("2. Power saving (standby) semantics")
-    ps0 = d.get("power saving")
-    if ps0 not in ("0", "1"):
-        log(f"'power saving' is {ps0!r}, skipping")
-    elif ask("Toggle power to test standby? Bar may go off for ~10s. [y/N]").lower() == "y":
-        other = "0" if ps0 == "1" else "1"
-        restore["power saving"] = ps0
-        log(f"power saving was {ps0}; setting {other}: {yset('power saving', other)}")
-        time.sleep(5)
-        log(f"read back: {ydata().get('power saving')}")
-        ask(f"With power saving={other}, is the bar ON or in STANDBY? (type on/standby)")
-        log(f"restoring power saving={ps0}: {yset('power saving', ps0)}")
-        restore.pop("power saving")
-        time.sleep(5)
-        log(f"read back: {ydata().get('power saving')}, vol={vol()}")
-        ask(f"With power saving={ps0}, is the bar ON or in STANDBY? (type on/standby)")
+    if want(2):
+        section("2. Power saving (standby) semantics")
+        ps0 = d.get("power saving")
+        if ps0 not in ("0", "1"):
+            log(f"'power saving' is {ps0!r}, skipping")
+        elif ask("Toggle power to test standby? Bar may go off for ~10s. [y/N]").lower() == "y":
+            other = "0" if ps0 == "1" else "1"
+            restore["power saving"] = ps0
+            log(f"power saving was {ps0}; setting {other}: {yset('power saving', other)}")
+            time.sleep(5)
+            log(f"read back: {ydata().get('power saving')}")
+            ask(f"With power saving={other}, is the bar ON or in STANDBY? (type on/standby)")
+            log(f"restoring power saving={ps0}: {yset('power saving', ps0)}")
+            restore.pop("power saving")
+            time.sleep(5)
+            log(f"read back: {ydata().get('power saving')}, vol={vol()}")
+            ask(f"With power saving={ps0}, is the bar ON or in STANDBY? (type on/standby)")
 
     # ---- 3. Volume: Linkplay vol vs Master volume ------------------------
-    section("3. Linkplay vol vs Yamaha Master volume")
-    log(f"before: vol={vol()} Master volume={ydata().get('Master volume')}")
-    if ask("Press VOL DOWN twice on the YAMAHA remote, then Enter (s to skip).") != "s":
-        time.sleep(2)
-        log(f"after Yamaha remote -2: vol={vol()} Master volume={ydata().get('Master volume')}")
-    if ask("Press VOL DOWN once on the TV remote (HDMI-CEC), then Enter (s to skip).") != "s":
-        time.sleep(2)
-        log(f"after TV remote -1: vol={vol()} Master volume={ydata().get('Master volume')}")
-    if ask("Press VOL UP on the remote(s) to get back to where you were, then Enter.") is not None:
-        time.sleep(2)
-        log(f"after restoring by remote: vol={vol()} Master volume={ydata().get('Master volume')}")
+    if want(3):
+        section("3. Linkplay vol vs Yamaha Master volume")
+        log(f"before: vol={vol()} Master volume={ydata().get('Master volume')}")
+        if ask("Press VOL DOWN twice on the YAMAHA remote, then Enter (s to skip).") != "s":
+            time.sleep(2)
+            log(f"after Yamaha remote -2: vol={vol()} Master volume={ydata().get('Master volume')}")
+        if ask("Press VOL DOWN once on the TV remote (HDMI-CEC), then Enter (s to skip).") != "s":
+            time.sleep(2)
+            log(f"after TV remote -1: vol={vol()} Master volume={ydata().get('Master volume')}")
+        if ask("Press VOL UP on the remote(s) to get back to where you were, then Enter.") is not None:
+            time.sleep(2)
+            log(f"after restoring by remote: vol={vol()} Master volume={ydata().get('Master volume')}")
 
-    # API-driven change: only ever downward, then back to the start level
-    cur = vol()
-    target = max(0, min(cur, start_vol) - 2)
-    log(f"\nAPI test: setPlayerCmd:vol:{target} (2 below current)")
-    api(f"setPlayerCmd:vol:{target}")
-    time.sleep(2)
-    log(f"after API set: vol={vol()} Master volume={ydata().get('Master volume')}")
-    back = min(cur, start_vol)
-    api(f"setPlayerCmd:vol:{back}")
-    time.sleep(2)
-    log(f"back to {back}: vol={vol()} Master volume={ydata().get('Master volume')}")
+        # API-driven change: only ever downward, then back to the start level
+        cur = vol()
+        target = max(0, min(cur, start_vol) - 2)
+        log(f"\nAPI test: setPlayerCmd:vol:{target} (2 below current)")
+        api(f"setPlayerCmd:vol:{target}")
+        time.sleep(2)
+        time.sleep(3)
+        log(f"after API set: vol={vol()} Master volume={ydata().get('Master volume')}")
+        ask("Did the bar get audibly quieter just now? (y/n/unsure)")
+        back = min(cur, start_vol)
+        api(f"setPlayerCmd:vol:{back}")
+        time.sleep(2)
+        log(f"back to {back}: vol={vol()} Master volume={ydata().get('Master volume')}")
 
     # ---- 4. Subwoofer range (quieter direction only) ---------------------
-    section("4. Subwoofer volume range (stepping DOWN only)")
-    sw0 = ydata().get("subwoofer volume")
-    restore["subwoofer volume"] = sw0
-    log(f"subwoofer volume starts at {sw0}")
-    for v in [x for x in (-4, -5, -6, -8, -12) if x < int(sw0)]:
-        r = yset("subwoofer volume", v)
+    if want(4):
+        section("4. Subwoofer volume range (stepping DOWN only)")
+        sw0 = ydata().get("subwoofer volume")
+        restore["subwoofer volume"] = sw0
+        log(f"subwoofer volume starts at {sw0}")
+        for v in [x for x in (-4, -5, -6, -8, -12) if x < int(sw0)]:
+            r = yset("subwoofer volume", v)
+            time.sleep(1)
+            log(f"set {v}: reply={r!r} read back={ydata().get('subwoofer volume')}")
+        log(f"restoring subwoofer {sw0}: {yset('subwoofer volume', sw0)}")
         time.sleep(1)
-        log(f"set {v}: reply={r!r} read back={ydata().get('subwoofer volume')}")
-    log(f"restoring subwoofer {sw0}: {yset('subwoofer volume', sw0)}")
-    time.sleep(1)
-    log(f"read back: {ydata().get('subwoofer volume')}")
-    restore.pop("subwoofer volume")
+        log(f"read back: {ydata().get('subwoofer volume')}")
+        restore.pop("subwoofer volume")
 
     # ---- 5. Sound program strings ----------------------------------------
-    section("5. Sound program values")
-    sp0 = ydata().get("sound program")
-    restore["sound program"] = sp0
-    log(f"sound program starts at {sp0!r}")
-    for v in ("sport", "sports", "tv", "tv program", "movie", "music", "game", "stereo"):
-        r = yset("sound program", v)
+    if want(5):
+        section("5. Sound program values")
+        sp0 = ydata().get("sound program")
+        restore["sound program"] = sp0
+        log(f"sound program starts at {sp0!r}")
+        for v in ("sport", "sports", "tv", "tv program", "movie", "music", "game", "stereo"):
+            r = yset("sound program", v)
+            time.sleep(1)
+            log(f"set {v!r}: reply={r!r} read back={ydata().get('sound program')!r}")
+        log(f"restoring {sp0!r}: {yset('sound program', sp0)}")
         time.sleep(1)
-        log(f"set {v!r}: reply={r!r} read back={ydata().get('sound program')!r}")
-    log(f"restoring {sp0!r}: {yset('sound program', sp0)}")
-    time.sleep(1)
-    log(f"read back: {ydata().get('sound program')!r}")
-    restore.pop("sound program")
+        log(f"read back: {ydata().get('sound program')!r}")
+        restore.pop("sound program")
 
     # ---- 6. LED via TCP 8899 with a correct checksum ---------------------
-    section("6. LED over TCP 8899 (correct checksum)")
-    log(f"Dimmer before: {ydata().get('Dimmer')}")
-    log(f"LED:0 reply: {tcp('MCU+PAS+RAKOIT:LED:0&')}")
-    time.sleep(2)
-    log(f"Dimmer after LED:0: {ydata().get('Dimmer')}")
-    ask("Did the front LEDs go off? (y/n)")
-    log(f"LED:1 reply: {tcp('MCU+PAS+RAKOIT:LED:1&')}")
-    time.sleep(2)
-    log(f"Dimmer after LED:1: {ydata().get('Dimmer')}")
-    ask("Did the front LEDs come back? (y/n)")
+    if want(6):
+        section("6. LED over TCP 8899 (correct checksum)")
+        log(f"Dimmer before: {ydata().get('Dimmer')}")
+        log(f"LED:0 reply: {tcp('MCU+PAS+RAKOIT:LED:0&')}")
+        time.sleep(2)
+        log(f"Dimmer after LED:0: {ydata().get('Dimmer')}")
+        ask("Did the front LEDs go off? (y/n)")
+        log(f"LED:1 reply: {tcp('MCU+PAS+RAKOIT:LED:1&')}")
+        time.sleep(2)
+        log(f"Dimmer after LED:1: {ydata().get('Dimmer')}")
+        ask("Did the front LEDs come back? (y/n)")
 
 
 def cleanup():
