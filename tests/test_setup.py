@@ -28,6 +28,11 @@ async def test_setup_power_volume_unload(hass, socket_enabled):
         assert st.attributes["volume_level"] == 0.2
         assert st.attributes["supported_features"] & 128 and st.attributes["supported_features"] & 256  # TURN_ON / TURN_OFF
         assert not [s for s in hass.states.async_all("switch") if "led" in s.entity_id], "LED switch should be gone"
+        vols = [s for s in hass.states.async_all("number") if s.entity_id.endswith("_volume") and "subwoofer" not in s.entity_id]
+        assert len(vols) == 1 and vols[0].state == "20.0", vols
+        assert "unit_of_measurement" not in vols[0].attributes
+        await hass.services.async_call("number", "set_value", {"entity_id": vols[0].entity_id, "value": 31}, blocking=True)
+        assert any(c.args[0] == "setPlayerCmd:vol:32" for c in api.call_args_list), api.call_args_list
 
         await hass.services.async_call("media_player", "volume_set", {"entity_id": eid, "volume_level": 0.23}, blocking=True)
         assert any(c.args[0] == "setPlayerCmd:vol:22" or c.args[0] == "setPlayerCmd:vol:24" for c in api.call_args_list), api.call_args_list
